@@ -1,20 +1,18 @@
-# 📋 Project Plan for Gridfinium (Hybrid v1)
+# 📋 Project Plan for Gridfinium (Hybrid v1 - Supabase Path)
 
 ## 1. Core Flow
 
 1. **Browser**
 
-   * Capture photo → run OpenCV.js (vision pipeline) → extract dimensions.
-   * Send only the dimensions + options (not the photo) to backend.
+   * Capture photo → OpenCV.js (WASM) in a Web Worker rectifies paper and extracts millimeter dimensions locally.
+   * Send only `{dims, options}` plus JWT to backend (no photo leaves the browser).
 2. **Backend API**
 
-   * Accept dimensions → generate Gridfinity STL via CadQuery → save STL → return pre-signed download link.
-3. **Storage**
+   * FastAPI receives the payload → CadQuery generates the STL → trimesh validates/repairs → uploads to Supabase Storage bucket `stl-bins`.
+   * Returns a short-lived pre-signed download URL.
+3. **Frontend**
 
-   * Generated STL lives in object storage (S3/Supabase).
-4. **Frontend**
-
-   * Download STL directly, or view STL preview (three.js).
+   * three.js + STL loader render the preview and expose a “Download STL” CTA backed by the pre-signed URL.
 
 ---
 
@@ -24,42 +22,28 @@ Here’s the checklist of signups you’ll want to do:
 
 ### 🔹 Frontend Hosting
 
-* **Vercel** (preferred) or **Netlify**.
+* **Vercel** (preferred).
 
-  * Hosts the React/Next.js app.
-  * Handles PWA support and automatic deployments from GitHub.
+  * Hosts the Next.js PWA with automatic preview deploys from GitHub.
 
 ### 🔹 Backend API & Compute
 
-* **Railway**, **Render**, **Fly.io**, or **Google Cloud Run**.
+* **Google Cloud Run** (primary) — **Fly.io** or **Render** as simpler fallbacks.
 
-  * Use FastAPI (Python) in Docker.
-  * Cloud Run or Fly.io scale well with containerized CadQuery jobs.
+  * Dockerized FastAPI + Uvicorn runtime.
+  * Integrate Google Secret Manager for configuration.
 
-### 🔹 Storage for STL Files
+### 🔹 Storage, Database & Auth (Supabase)
 
-* **Amazon S3** (AWS free tier fine) *or* **Supabase Storage** (simpler dev experience).
-
-  * Purpose: save generated STL files and hand out pre-signed download links.
-
-### 🔹 Authentication
-
-* **Supabase Auth** (built-in if you already use Supabase for storage/DB).
-
-  * Alternatives: Clerk or Auth0 if you want polished login widgets.
-  * Needed for: keeping user projects private and preventing API abuse.
-
-### 🔹 Database (optional for v1, but handy)
-
-* **Supabase Postgres** (bundled with Auth/Storage).
-
-  * Use to save user presets, saved dimensions, and history of generated bins.
+* **Supabase Storage** bucket `stl-bins` (private) for STL outputs with pre-signed URL access.
+* **Supabase Postgres** for user profiles, bin configs, and job records with RLS enabled.
+* **Supabase Auth** for email + Google logins, issuing JWTs for API access.
 
 ### 🔹 Git/CI/CD
 
 * **GitHub** (repo + Actions).
 
-  * Hook GitHub Actions to: lint, test, build Docker, deploy frontend/backend.
+  * Workflows: lint, test, build Docker, deploy to Vercel/Cloud Run.
 
 ### 🔹 Monitoring & Error Tracking
 
@@ -67,16 +51,17 @@ Here’s the checklist of signups you’ll want to do:
 
   * Frontend + backend error tracking.
 * **Cloudflare (optional)** if you want WAF + rate limiting in front of your API.
+* **gitleaks** pre-commit hook to avoid secret leakage.
 
 ---
 
 ## 3. Tooling Breakdown
 
-* **Frontend stack**: Next.js (React), opencv.js (WASM), Zustand (state), three.js/STL viewer, PWA support.
-* **Backend stack**: FastAPI, CadQuery, trimesh (mesh validation), Uvicorn/Gunicorn.
-* **Infrastructure**: Dockerized API, deployed on Cloud Run/Fly.io.
-* **Storage/DB/Auth**: Supabase (all-in-one) or AWS (S3 + Cognito + RDS if you want to stay in AWS land).
-* **CI/CD**: GitHub Actions + Vercel integration + Docker build pipeline.
+* **Frontend stack**: Next.js (React) for routing/SSR/PWA, Zustand for state, Radix UI or MUI for components, OpenCV.js (WASM) vision worker, three.js + STL loader for previews.
+* **Backend stack**: FastAPI with CadQuery geometry engine, trimesh for mesh validation, Uvicorn inside Docker.
+* **Infrastructure**: Containerized API on Google Cloud Run (alt: Fly.io/Render), secrets sourced from Google Secret Manager.
+* **Storage/DB/Auth**: Supabase Postgres + Auth + Storage with RLS and pre-signed URL access.
+* **CI/CD & Monitoring**: GitHub Actions, Vercel integration, Docker build pipeline, Sentry for observability, gitleaks for secret scanning.
 
 ---
 
@@ -86,11 +71,11 @@ Here’s the checklist of signups you’ll want to do:
 2. **Vercel** — connect repo → instant frontend deploys.
 3. **Supabase** — one project = Auth + Postgres + Storage (easy path).
 
-   * Create bucket `stl-bins`.
-   * Enable email login or OAuth (Google/GitHub).
-4. **Railway/Render/Fly.io/Cloud Run** — deploy FastAPI in Docker.
+   * Create bucket `stl-bins` (private) and define RLS policies.
+   * Enable email + Google login providers.
+4. **Google Cloud Run** (or Fly.io/Render) — deploy Dockerized FastAPI + Uvicorn.
 
-   * Add Supabase/Storage creds as secrets.
+   * Wire up Supabase keys via Google Secret Manager → environment variables.
 5. **Sentry** — set up frontend + backend monitoring.
 6. *(Optional)* **Cloudflare** — proxy your domain, add free SSL + rate limiting.
 
@@ -98,12 +83,12 @@ Here’s the checklist of signups you’ll want to do:
 
 ## 5. Early Deliverables (2-3 Weeks MVP)
 
-* ✅ Camera capture + opencv.js measurement in browser.
-* ✅ `/stl` FastAPI endpoint → generate STL → upload to storage → return URL.
-* ✅ Frontend download button → STL viewer.
-* ✅ Supabase Auth → login and save bin configs.
-* ✅ Deployed on Vercel (frontend) + Cloud Run (backend).
+* ✅ Camera capture + OpenCV.js Web Worker measurement in-browser (no photo upload).
+* ✅ `/stl` FastAPI endpoint → CadQuery STL generation → trimesh validation → Supabase Storage upload.
+* ✅ Frontend three.js STL preview + “Download STL” button using pre-signed URL.
+* ✅ Supabase Auth (email + Google) with JWT-secured API calls and DB RLS for saved bin configs.
+* ✅ Deployments: Vercel (frontend) + Cloud Run (backend) with GitHub Actions CI/CD.
 
 ---
 
-> Want a **signup decision matrix** (Supabase vs AWS vs Firebase) to pick a stack and avoid doubling up? That way you’ll know exactly which services to register before coding.
+> Want a **signup decision matrix** (Supabase vs AWS vs Firebase) or a **visual architecture diagram** (boxes + arrows) for docs and pitch decks?
