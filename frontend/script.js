@@ -480,6 +480,25 @@
 
       window.requestAnimationFrame(function () {
         drawAnalysisOverlay(image, detectedRegion);
+
+        if (calibrationCanvas && preview && previewImage) {
+          var outlinedImageUrl = "";
+
+          try {
+            outlinedImageUrl = calibrationCanvas.toDataURL("image/png");
+          } catch (error) {
+            outlinedImageUrl = "";
+          }
+
+          if (outlinedImageUrl) {
+            previewImage.src = outlinedImageUrl;
+            preview.hidden = false;
+          }
+        }
+
+        if (calibrationPreview) {
+          calibrationPreview.hidden = true;
+        }
       });
     };
     image.src = currentImageDataUrl;
