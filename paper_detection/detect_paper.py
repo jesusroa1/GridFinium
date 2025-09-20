@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional, Sequence, Tuple
 
 try:
     import cv2  # type: ignore
@@ -22,11 +23,20 @@ except ImportError as exc:  # pragma: no cover - import guard
     raise
 
 
+@dataclass(frozen=True)
+class ObjectBoundingBox:
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 @dataclass
 class DetectionResult:
     corners: np.ndarray
     mask: np.ndarray
     debug_images: Dict[str, np.ndarray]
+    other_objects: Tuple[ObjectBoundingBox, ...] = field(default_factory=tuple)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -162,6 +172,62 @@ def order_box_points(points: np.ndarray) -> np.ndarray:
     return ordered
 
 
+
+def find_additional_objects(image: np.ndarray, paper_corners: np.ndarray) -> Tuple[ObjectBoundingBox, ...]:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 50, 150)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    edges = cv2.dilate(edges, kernel, iterations=1)
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    paper_mask = np.zeros_like(gray)
+    cv2.fillPoly(paper_mask, [paper_corners.astype(np.int32)], 255)
+
+    height, width = gray.shape
+    image_area = float(height * width)
+    min_area = max(500, int(image_area * 0.0005))
+
+    candidate_boxes: List[ObjectBoundingBox] = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = w * h
+        if area < min_area:
+            continue
+        if area >= image_area * 0.95:
+            continue
+
+        overlap = paper_mask[y : y + h, x : x + w]
+        if overlap.size == 0:
+            continue
+        paper_ratio = float(cv2.countNonZero(overlap)) / float(area)
+        if paper_ratio > 0.2:
+            continue
+
+        candidate_boxes.append(ObjectBoundingBox(x=x, y=y, width=w, height=h))
+
+    candidate_boxes.sort(key=lambda box: box.width * box.height, reverse=True)
+
+    objects: List[ObjectBoundingBox] = []
+
+    def boxes_overlap(lhs: ObjectBoundingBox, rhs: ObjectBoundingBox) -> bool:
+        x_overlap = max(0, min(lhs.x + lhs.width, rhs.x + rhs.width) - max(lhs.x, rhs.x))
+        y_overlap = max(0, min(lhs.y + lhs.height, rhs.y + rhs.height) - max(lhs.y, rhs.y))
+        if x_overlap == 0 or y_overlap == 0:
+            return False
+        overlap_area = x_overlap * y_overlap
+        return overlap_area >= 0.6 * min(lhs.width * lhs.height, rhs.width * rhs.height)
+
+    for box in candidate_boxes:
+        if any(boxes_overlap(box, existing) for existing in objects):
+            continue
+        objects.append(box)
+
+    return tuple(objects)
+
+
 def detect_paper(image: np.ndarray, max_dimension: int, min_area_ratio: float) -> Optional[DetectionResult]:
     working, scale = resize_for_processing(image, max_dimension)
     mask, debug_images = build_white_mask(working)
@@ -175,16 +241,109 @@ def detect_paper(image: np.ndarray, max_dimension: int, min_area_ratio: float) -
     contour_box = contour_box.astype(np.float32) / scale
     ordered = order_box_points(contour_box)
 
-    return DetectionResult(corners=ordered, mask=mask, debug_images=debug_images)
+    other_objects = find_additional_objects(image, ordered)
+
+    return DetectionResult(
+        corners=ordered,
+        mask=mask,
+        debug_images=debug_images,
+        other_objects=other_objects,
+    )
 
 
-def draw_outline(image: np.ndarray, corners: np.ndarray) -> np.ndarray:
+
+def draw_outline(
+    image: np.ndarray,
+    corners: np.ndarray,
+    other_objects: Optional[Sequence[ObjectBoundingBox]] = None,
+) -> np.ndarray:
     overlay = image.copy()
+    outline_color = (60, 255, 150)
+    point_color = (50, 220, 130)
+    extra_color = (255, 0, 0)
+
     poly_points = corners.reshape(-1, 1, 2).astype(np.int32)
-    cv2.polylines(overlay, [poly_points], isClosed=True, color=(60, 255, 150), thickness=5, lineType=cv2.LINE_AA)
+    cv2.polylines(overlay, [poly_points], isClosed=True, color=outline_color, thickness=5, lineType=cv2.LINE_AA)
 
     for (x, y) in corners.astype(int):
-        cv2.circle(overlay, (x, y), radius=8, color=(50, 220, 130), thickness=-1, lineType=cv2.LINE_AA)
+        cv2.circle(overlay, (x, y), radius=8, color=point_color, thickness=-1, lineType=cv2.LINE_AA)
+
+    def annotate_edge(pt1: np.ndarray, pt2: np.ndarray, label: str) -> None:
+        midpoint = (pt1 + pt2) / 2.0
+        direction = pt2 - pt1
+        length = np.linalg.norm(direction)
+        if length == 0:
+            return
+
+        normal = np.array([-direction[1], direction[0]], dtype=np.float32)
+        normal_length = np.linalg.norm(normal)
+        if normal_length == 0:
+            return
+        normal /= normal_length
+
+        center = corners.mean(axis=0)
+        if np.dot(normal, midpoint - center) < 0:
+            normal *= -1
+
+        offset_distance = max(20, int(round(max(image.shape[:2]) * 0.03)))
+        text_position = midpoint + normal * offset_distance
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = max(image.shape[:2]) / 1000.0
+        font_scale = max(font_scale, 0.6)
+        thickness = 2
+
+        text_pos = (int(round(text_position[0])), int(round(text_position[1])))
+        cv2.putText(overlay, label, text_pos, font, font_scale, (0, 0, 0), thickness * 2, cv2.LINE_AA)
+        cv2.putText(overlay, label, text_pos, font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+    edges = [
+        (corners[0], corners[1]),  # top
+        (corners[1], corners[2]),  # right
+        (corners[2], corners[3]),  # bottom
+        (corners[3], corners[0]),  # left
+    ]
+
+    edge_lengths = [float(np.linalg.norm(b - a)) for a, b in edges]
+
+    horizontal_mean = (edge_lengths[0] + edge_lengths[2]) / 2.0
+    vertical_mean = (edge_lengths[1] + edge_lengths[3]) / 2.0
+
+    long_indices: Tuple[int, int]
+    short_indices: Tuple[int, int]
+    if horizontal_mean >= vertical_mean:
+        long_indices = (0, 2)
+        short_indices = (1, 3)
+    else:
+        long_indices = (1, 3)
+        short_indices = (0, 2)
+
+    for idx in long_indices:
+        annotate_edge(edges[idx][0], edges[idx][1], "11 in")
+    for idx in short_indices:
+        annotate_edge(edges[idx][0], edges[idx][1], "8.5 in")
+
+    if other_objects:
+        height, width = overlay.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        for box in other_objects:
+            top_left = (box.x, box.y)
+            bottom_right = (box.x + box.width, box.y + box.height)
+            cv2.rectangle(overlay, top_left, bottom_right, color=extra_color, thickness=3, lineType=cv2.LINE_AA)
+
+            label = f"{box.width}x{box.height}px"
+            text_size, baseline = cv2.getTextSize(label, font, 0.65, 2)
+            text_width, text_height = text_size
+            text_x = max(5, min(box.x, width - text_width - 5))
+            text_y = box.y - 10
+            minimum_y = text_height + 5
+            if text_y < minimum_y:
+                text_y = box.y + box.height + text_height + 5
+            text_y = min(text_y, height - baseline - 5)
+            text_y = max(minimum_y, text_y)
+
+            cv2.putText(overlay, label, (text_x, text_y), font, 0.65, extra_color, 2, cv2.LINE_AA)
+
     return overlay
 
 
@@ -246,6 +405,20 @@ def resolve_input_path(args: argparse.Namespace) -> Path:
 
     return input_path
 
+def ensure_downloads_timestamp(output_path: Path) -> Path:
+    """Append a timestamp when saving to the user's Downloads directory."""
+    downloads_dir = (Path.home() / 'Downloads').resolve(strict=False)
+    try:
+        output_resolved = output_path.resolve(strict=False)
+    except OSError:
+        return output_path
+
+    if output_resolved == downloads_dir or downloads_dir in output_resolved.parents:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return output_path.with_name(f"{output_path.stem}_{timestamp}{output_path.suffix}")
+
+    return output_path
+
 
 def main() -> None:
     args = parse_arguments()
@@ -261,12 +434,20 @@ def main() -> None:
         print("No paper-like region was detected. Try adjusting lighting or the min-area-ratio.", file=sys.stderr)
         sys.exit(2)
 
-    outlined = draw_outline(image, detection.corners)
+    outlined = draw_outline(image, detection.corners, detection.other_objects)
+
+    if detection.other_objects:
+        print("Detected additional objects:")
+        for idx, box in enumerate(detection.other_objects, start=1):
+            print(f"  Object {idx}: {box.width}x{box.height}px at ({box.x}, {box.y})")
+    else:
+        print("No additional non-paper objects were detected.")
 
     output_path = args.output
     if output_path is None:
         output_path = input_path.with_name(f"{input_path.stem}_outlined.png")
 
+    output_path = ensure_downloads_timestamp(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if cv2.imwrite(str(output_path), outlined):
@@ -288,3 +469,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
