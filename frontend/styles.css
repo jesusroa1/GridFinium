@@ -231,6 +231,10 @@ a:hover {
   border: 1px solid var(--border);
 }
 
+.capture-metrics {
+  margin-top: 1.5rem;
+}
+
 .metric-label {
   color: #1d1f24;
 }
