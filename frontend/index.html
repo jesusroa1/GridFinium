@@ -40,6 +40,16 @@
       <div class="capture-actions">
         <button type="button" class="primary" disabled id="analyze-button">Gridify</button>
       </div>
+      <ul class="metrics capture-metrics">
+        <li>
+          <span class="metric-label">Outline perimeter</span>
+          <span class="metric-value" id="metric-perimeter">--</span>
+        </li>
+        <li>
+          <span class="metric-label">Outline area</span>
+          <span class="metric-value" id="metric-area">--</span>
+        </li>
+      </ul>
     </section>
 
     <section class="panel" id="calibration">
@@ -53,16 +63,6 @@
     <section class="panel" id="dimensions">
       <h2>Dimensions</h2>
       <p>Review the extracted measurements before generating geometry.</p>
-      <ul class="metrics">
-        <li>
-          <span class="metric-label">Outline perimeter</span>
-          <span class="metric-value" id="metric-perimeter">--</span>
-        </li>
-        <li>
-          <span class="metric-label">Outline area</span>
-          <span class="metric-value" id="metric-area">--</span>
-        </li>
-      </ul>
     </section>
   </main>
 
