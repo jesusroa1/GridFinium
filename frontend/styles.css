@@ -159,6 +159,12 @@ a:hover {
   justify-self: start;
 }
 
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .calibration-controls {
   display: flex;
   flex-direction: column;
@@ -350,11 +356,17 @@ button:not(:disabled):hover {
 
   .preview button,
   .actions button,
+  .capture-actions button,
   button.primary {
     width: 100%;
   }
 
   .actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .capture-actions {
     width: 100%;
     flex-direction: column;
   }
