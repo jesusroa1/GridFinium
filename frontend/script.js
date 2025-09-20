@@ -16,6 +16,16 @@
     detectionCanvas.getContext("2d");
   var lastDetectedRegion = null;
 
+  if (fileInput && typeof navigator !== "undefined") {
+    var isIOS = /iP(ad|hone|od)/.test(navigator.platform || "") ||
+      (navigator.userAgent && navigator.userAgent.includes("Mac") &&
+        "ontouchend" in document);
+
+    if (isIOS) {
+      fileInput.removeAttribute("capture");
+    }
+  }
+
   function resetAnalysis() {
     if (!calibrationPreview || !calibrationCanvas || !canvasContext) {
       return;
