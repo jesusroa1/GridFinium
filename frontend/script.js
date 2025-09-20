@@ -79,6 +79,20 @@
     }
   }
 
+  function getPaperMeasurements() {
+    if (!paperSizeSelect) {
+      return { shortLabel: "8.5 in", longLabel: "11 in" };
+    }
+
+    switch (paperSizeSelect.value) {
+      case "a4":
+        return { shortLabel: "210 mm", longLabel: "297 mm" };
+      case "letter":
+      default:
+        return { shortLabel: "8.5 in", longLabel: "11 in" };
+    }
+  }
+
   function detectPaperBounds(image) {
     if (!detectionContext) {
       return null;
@@ -461,6 +475,83 @@
     }
 
     canvasContext.stroke();
+
+    drawMeasurementLabels(overlayCorners, diagLength);
+    canvasContext.restore();
+  }
+
+  function drawMeasurementLabels(corners, diagLength) {
+    if (!corners || corners.length < 4) {
+      return;
+    }
+
+    var edges = [];
+
+    for (var i = 0; i < corners.length; i++) {
+      var start = corners[i];
+      var end = corners[(i + 1) % corners.length];
+      var dx = end.x - start.x;
+      var dy = end.y - start.y;
+      var length = Math.sqrt(dx * dx + dy * dy);
+      edges.push({
+        start: start,
+        end: end,
+        dx: dx,
+        dy: dy,
+        length: length
+      });
+    }
+
+    if (!edges.length) {
+      return;
+    }
+
+    if (edges.length < 4) {
+      return;
+    }
+
+    var widthAvg = (edges[0].length + edges[2].length) / 2;
+    var heightAvg = (edges[1].length + edges[3].length) / 2;
+    var measurements = getPaperMeasurements();
+    var widthLabel = widthAvg >= heightAvg ? measurements.longLabel : measurements.shortLabel;
+    var heightLabel = widthAvg >= heightAvg ? measurements.shortLabel : measurements.longLabel;
+    var fontSize = Math.max(14, Math.round(diagLength * 0.04));
+
+    canvasContext.save();
+    canvasContext.font = fontSize + "px 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+    canvasContext.textAlign = "center";
+    canvasContext.textBaseline = "middle";
+
+    edges.forEach(function (edge, index) {
+      var midX = (edge.start.x + edge.end.x) / 2;
+      var midY = (edge.start.y + edge.end.y) / 2;
+      var angle = Math.atan2(edge.dy, edge.dx);
+      var label = index % 2 === 0 ? widthLabel : heightLabel;
+
+      if (angle > Math.PI / 2 || angle < -Math.PI / 2) {
+        angle += Math.PI;
+      }
+
+      canvasContext.save();
+      canvasContext.translate(midX, midY);
+      canvasContext.rotate(angle);
+      var paddingX = fontSize * 0.6;
+      var paddingY = fontSize * 0.35;
+      var textMetrics = canvasContext.measureText(label);
+      var textWidth = textMetrics.width;
+      var boxWidth = textWidth + paddingX * 2;
+      var boxHeight = fontSize + paddingY * 2;
+      canvasContext.fillStyle = "rgba(0, 0, 0, 0.75)";
+      canvasContext.fillRect(-boxWidth / 2, -boxHeight / 2, boxWidth, boxHeight);
+      canvasContext.fillStyle = "#ffffff";
+      canvasContext.strokeStyle = "rgba(0, 0, 0, 0.9)";
+      canvasContext.lineWidth = Math.max(2, Math.round(fontSize * 0.15));
+      canvasContext.lineJoin = "round";
+      canvasContext.strokeText(label, 0, 0);
+      canvasContext.fillText(label, 0, 0);
+      canvasContext.restore();
+    });
+
     canvasContext.restore();
   }
 
