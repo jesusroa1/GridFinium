@@ -5,10 +5,9 @@
   var previewImage = document.getElementById("preview-image");
   var clearButton = document.getElementById("clear-button");
   var analyzeButton = document.getElementById("analyze-button");
-  var calibrationPreview = document.getElementById("calibration-preview");
-  var calibrationCanvas = document.getElementById("calibration-canvas");
   var paperSizeSelect = document.getElementById("paper-size");
-  var canvasContext = calibrationCanvas ? calibrationCanvas.getContext("2d") : null;
+  var calibrationCanvas = document.createElement("canvas");
+  var canvasContext = calibrationCanvas.getContext("2d");
   var currentImageDataUrl = "";
   var detectionCanvas = document.createElement("canvas");
   var detectionContext =
@@ -27,12 +26,12 @@
   }
 
   function resetAnalysis() {
-    if (!calibrationPreview || !calibrationCanvas || !canvasContext) {
+    lastDetectedRegion = null;
+
+    if (!calibrationCanvas || !canvasContext) {
       return;
     }
 
-    lastDetectedRegion = null;
-    calibrationPreview.hidden = true;
     calibrationCanvas.width = 0;
     calibrationCanvas.height = 0;
     canvasContext.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
@@ -354,11 +353,14 @@
   }
 
   function drawAnalysisOverlay(image, detectedRegion) {
-    if (!calibrationPreview || !calibrationCanvas || !canvasContext) {
+    if (!calibrationCanvas || !canvasContext) {
       return;
     }
 
-    var availableWidth = calibrationPreview.clientWidth || image.width;
+    var availableWidth =
+      (preview && preview.clientWidth) ||
+      (previewImage && previewImage.clientWidth) ||
+      image.width;
     var scale = Math.min(1, availableWidth / image.width);
     if (!isFinite(scale) || scale <= 0) {
       scale = 1;
@@ -565,10 +567,6 @@
       var detectedRegion = detectPaperBounds(image);
       lastDetectedRegion = detectedRegion;
 
-      if (calibrationPreview) {
-        calibrationPreview.hidden = false;
-      }
-
       window.requestAnimationFrame(function () {
         drawAnalysisOverlay(image, detectedRegion);
 
@@ -585,10 +583,6 @@
             previewImage.src = outlinedImageUrl;
             preview.hidden = false;
           }
-        }
-
-        if (calibrationPreview) {
-          calibrationPreview.hidden = true;
         }
       });
     };
@@ -621,25 +615,33 @@
 
   if (paperSizeSelect) {
     paperSizeSelect.addEventListener("change", function () {
-      if (!calibrationPreview || calibrationPreview.hidden) {
-        return;
-      }
-
       if (!currentImageDataUrl) {
         return;
       }
 
-      if (lastDetectedRegion) {
-        var image = new Image();
-        image.onload = function () {
-          window.requestAnimationFrame(function () {
-            drawAnalysisOverlay(image, lastDetectedRegion);
-          });
-        };
-        image.src = currentImageDataUrl;
-      } else {
-        runAnalysis();
-      }
+      var image = new Image();
+      image.onload = function () {
+        window.requestAnimationFrame(function () {
+          drawAnalysisOverlay(image, lastDetectedRegion);
+
+          if (calibrationCanvas && preview && previewImage) {
+            var outlinedImageUrl = "";
+
+            try {
+              outlinedImageUrl = calibrationCanvas.toDataURL("image/png");
+            } catch (error) {
+              outlinedImageUrl = "";
+            }
+
+            if (outlinedImageUrl) {
+              previewImage.src = outlinedImageUrl;
+              preview.hidden = false;
+            }
+          }
+
+        });
+      };
+      image.src = currentImageDataUrl;
     });
   }
 })();
