@@ -6,6 +6,8 @@
   var clearButton = document.getElementById("clear-button");
   var analyzeButton = document.getElementById("analyze-button");
   var paperSizeSelect = document.getElementById("paper-size");
+  var metricScale = document.getElementById("metric-scale");
+  var metricCoverage = document.getElementById("metric-coverage");
   var calibrationCanvas = document.createElement("canvas");
   var canvasContext = calibrationCanvas.getContext("2d");
   var currentImageDataUrl = "";
@@ -14,6 +16,7 @@
     detectionCanvas.getContext("2d", { willReadFrequently: true }) ||
     detectionCanvas.getContext("2d");
   var lastDetectedRegion = null;
+  var calibrationState = null;
 
   if (fileInput && typeof navigator !== "undefined") {
     var isIOS = /iP(ad|hone|od)/.test(navigator.platform || "") ||
@@ -27,6 +30,11 @@
 
   function resetAnalysis() {
     lastDetectedRegion = null;
+    calibrationState = null;
+
+    if (typeof window !== "undefined") {
+      window.gridFiniumCalibration = null;
+    }
 
     if (!calibrationCanvas || !canvasContext) {
       return;
@@ -35,6 +43,8 @@
     calibrationCanvas.width = 0;
     calibrationCanvas.height = 0;
     canvasContext.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
+
+    updateCalibrationMetrics(null);
   }
 
   function resetPreview() {
@@ -89,6 +99,20 @@
       case "letter":
       default:
         return { shortLabel: "8.5 in", longLabel: "11 in" };
+    }
+  }
+
+  function getPaperPhysicalDimensions() {
+    if (!paperSizeSelect) {
+      return { short: 215.9, long: 279.4, unit: "mm" };
+    }
+
+    switch (paperSizeSelect.value) {
+      case "a4":
+        return { short: 210, long: 297, unit: "mm" };
+      case "letter":
+      default:
+        return { short: 215.9, long: 279.4, unit: "mm" };
     }
   }
 
@@ -557,6 +581,100 @@
     canvasContext.restore();
   }
 
+  function computeCalibration(detectedRegion, imageWidth, imageHeight) {
+    if (!detectedRegion || !detectedRegion.corners || detectedRegion.corners.length < 4) {
+      return null;
+    }
+
+    var corners = detectedRegion.corners;
+    var edges = [];
+
+    for (var edgeIndex = 0; edgeIndex < corners.length; edgeIndex++) {
+      var startCorner = corners[edgeIndex];
+      var endCorner = corners[(edgeIndex + 1) % corners.length];
+      var edgeDx = endCorner.x - startCorner.x;
+      var edgeDy = endCorner.y - startCorner.y;
+      var edgeLength = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+
+      edges.push(edgeLength);
+    }
+
+    if (edges.length < 4) {
+      return null;
+    }
+
+    var widthPixels = (edges[0] + edges[2]) / 2;
+    var heightPixels = (edges[1] + edges[3]) / 2;
+
+    if (!isFinite(widthPixels) || !isFinite(heightPixels) || widthPixels <= 0 || heightPixels <= 0) {
+      return null;
+    }
+
+    var physical = getPaperPhysicalDimensions();
+    var longSide = physical.long;
+    var shortSide = physical.short;
+
+    var landscape = widthPixels >= heightPixels;
+    var widthPhysical = landscape ? longSide : shortSide;
+    var heightPhysical = landscape ? shortSide : longSide;
+
+    var mmPerPixelX = widthPhysical / widthPixels;
+    var mmPerPixelY = heightPhysical / heightPixels;
+    var mmPerPixel = (mmPerPixelX + mmPerPixelY) / 2;
+
+    if (!isFinite(mmPerPixel) || mmPerPixel <= 0) {
+      return null;
+    }
+
+    var coverage = null;
+    if (detectedRegion.boundingBox && imageWidth && imageHeight) {
+      var bboxArea = detectedRegion.boundingBox.width * detectedRegion.boundingBox.height;
+      var imageArea = imageWidth * imageHeight;
+
+      if (isFinite(bboxArea) && isFinite(imageArea) && bboxArea > 0 && imageArea > 0) {
+        coverage = Math.max(0, Math.min(100, (bboxArea / imageArea) * 100));
+      }
+    }
+
+    return {
+      mmPerPixel: mmPerPixel,
+      mmPerPixelX: mmPerPixelX,
+      mmPerPixelY: mmPerPixelY,
+      widthPixels: widthPixels,
+      heightPixels: heightPixels,
+      orientation: landscape ? "landscape" : "portrait",
+      coverage: coverage,
+      unit: physical.unit,
+      corners: corners,
+      boundingBox: detectedRegion.boundingBox || null,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight
+    };
+  }
+
+  function updateCalibrationMetrics(calibration) {
+    if (metricScale) {
+      if (calibration && calibration.mmPerPixel) {
+        var pixelsPerMm = 1 / calibration.mmPerPixel;
+        if (isFinite(pixelsPerMm) && pixelsPerMm > 0) {
+          metricScale.textContent = pixelsPerMm.toFixed(2) + " px/mm";
+        } else {
+          metricScale.textContent = "--";
+        }
+      } else {
+        metricScale.textContent = "--";
+      }
+    }
+
+    if (metricCoverage) {
+      if (calibration && calibration.coverage !== null && calibration.coverage !== undefined) {
+        metricCoverage.textContent = calibration.coverage.toFixed(1) + "%";
+      } else {
+        metricCoverage.textContent = "--";
+      }
+    }
+  }
+
   function runAnalysis() {
     if (!currentImageDataUrl) {
       return;
@@ -567,8 +685,16 @@
       var detectedRegion = detectPaperBounds(image);
       lastDetectedRegion = detectedRegion;
 
+      calibrationState = computeCalibration(detectedRegion, image.width, image.height);
+
+      if (typeof window !== "undefined") {
+        window.gridFiniumCalibration = calibrationState;
+      }
+
       window.requestAnimationFrame(function () {
         drawAnalysisOverlay(image, detectedRegion);
+
+        updateCalibrationMetrics(calibrationState);
 
         if (calibrationCanvas && preview && previewImage) {
           var outlinedImageUrl = "";
@@ -623,6 +749,14 @@
       image.onload = function () {
         window.requestAnimationFrame(function () {
           drawAnalysisOverlay(image, lastDetectedRegion);
+
+          calibrationState = computeCalibration(lastDetectedRegion, image.width, image.height);
+
+          if (typeof window !== "undefined") {
+            window.gridFiniumCalibration = calibrationState;
+          }
+
+          updateCalibrationMetrics(calibrationState);
 
           if (calibrationCanvas && preview && previewImage) {
             var outlinedImageUrl = "";
