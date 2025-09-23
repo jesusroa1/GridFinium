@@ -231,6 +231,7 @@
       preview.hidden = false;
       analyzeButton.disabled = false;
       updateHandlePositions();
+      runAnalysis();
     };
     reader.readAsDataURL(file);
   }
@@ -1411,6 +1412,7 @@
 
   updateExportButtonState();
 })();
+
 
 
 
