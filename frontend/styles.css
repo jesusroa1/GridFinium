@@ -205,6 +205,59 @@ a:hover {
   transition: background-color 200ms ease, border-color 200ms ease;
 }
 
+.preview-stage {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.preview-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.quad-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+  background: rgba(59, 130, 246, 0.9);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+  padding: 0;
+  z-index: 5;
+  touch-action: none;
+  display: none;
+}
+
+.quad-handle.quad-handle--active {
+  display: block;
+}
+
+.quad-handle:active {
+  cursor: grabbing;
+}
+
+.quad-handle:focus-visible {
+  outline: 2px solid var(--button-contrast-bg);
+  outline-offset: 2px;
+}
+
+.quad-handle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+:root[data-theme="dark"] .quad-handle {
+  border-color: rgba(15, 23, 42, 0.2);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.55);
+}
+
 .preview button {
   justify-self: start;
 }

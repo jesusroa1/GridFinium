@@ -3,6 +3,7 @@
   var fileInput = document.getElementById("file-input");
   var preview = document.getElementById("preview");
   var previewImage = document.getElementById("preview-image");
+  var previewStage = document.getElementById("preview-stage");
   var clearButton = document.getElementById("clear-button");
   var analyzeButton = document.getElementById("analyze-button");
   var exportButton = document.getElementById("export-button");
@@ -12,6 +13,15 @@
   var calibrationCanvas = document.createElement("canvas");
   var canvasContext = calibrationCanvas.getContext("2d");
   var currentImageDataUrl = "";
+  var cornerHandles = [];
+  var handleCornerKeys = ["tl", "tr", "br", "bl"];
+  var activeHandle = null;
+  var lastAnalyzedImage = null;
+  var lastOverlayScale = 1;
+  var lastOverlayCanvasWidth = 0;
+  var lastOverlayCanvasHeight = 0;
+  var pendingOverlayRender = false;
+  var lastPreviewDataUrl = "";
   var detectionCanvas = document.createElement("canvas");
   var detectionContext =
     detectionCanvas.getContext("2d", { willReadFrequently: true }) ||
@@ -106,6 +116,40 @@
     });
   }
 
+  if (previewStage) {
+    var handleLabels = {
+      tl: "Adjust top-left corner",
+      tr: "Adjust top-right corner",
+      br: "Adjust bottom-right corner",
+      bl: "Adjust bottom-left corner"
+    };
+
+    handleCornerKeys.forEach(function (key, index) {
+      var handle = document.createElement("button");
+      handle.type = "button";
+      handle.className = "quad-handle";
+      handle.dataset.corner = key;
+      handle.dataset.index = String(index);
+      handle.setAttribute("aria-label", handleLabels[key]);
+      handle.addEventListener("pointerdown", onHandlePointerDown);
+      handle.addEventListener("pointermove", onHandlePointerMove);
+      handle.addEventListener("pointerup", onHandlePointerUp);
+      handle.addEventListener("pointercancel", onHandlePointerUp);
+      previewStage.appendChild(handle);
+      cornerHandles.push(handle);
+    });
+
+    updateHandlePositions();
+  }
+
+  if (previewImage) {
+    previewImage.addEventListener("load", updateHandlePositions);
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", updateHandlePositions);
+  }
+
   if (fileInput && typeof navigator !== "undefined") {
     var isIOS = /iP(ad|hone|od)/.test(navigator.platform || "") ||
       (navigator.userAgent && navigator.userAgent.includes("Mac") &&
@@ -119,6 +163,28 @@
   function resetAnalysis() {
     lastDetectedRegion = null;
     calibrationState = null;
+    lastAnalyzedImage = null;
+    lastOverlayScale = 1;
+    lastOverlayCanvasWidth = 0;
+    lastOverlayCanvasHeight = 0;
+    pendingOverlayRender = false;
+    lastPreviewDataUrl = "";
+
+    if (activeHandle && activeHandle.element && activeHandle.element.classList) {
+      activeHandle.element.classList.remove("quad-handle--dragging");
+    }
+    activeHandle = null;
+
+    for (var handleIndex = 0; handleIndex < cornerHandles.length; handleIndex++) {
+      var handle = cornerHandles[handleIndex];
+      if (handle) {
+        handle.style.left = "";
+        handle.style.top = "";
+        handle.classList.remove("quad-handle--dragging");
+      }
+    }
+
+    updateHandlePositions();
 
     if (exportButton) {
       exportButton.disabled = true;
@@ -161,8 +227,10 @@
     reader.onload = function (event) {
       currentImageDataUrl = event.target.result;
       previewImage.src = currentImageDataUrl;
+      lastPreviewDataUrl = currentImageDataUrl;
       preview.hidden = false;
       analyzeButton.disabled = false;
+      updateHandlePositions();
     };
     reader.readAsDataURL(file);
   }
@@ -538,6 +606,9 @@
 
     calibrationCanvas.width = canvasWidth;
     calibrationCanvas.height = canvasHeight;
+    lastOverlayScale = scale;
+    lastOverlayCanvasWidth = canvasWidth;
+    lastOverlayCanvasHeight = canvasHeight;
 
     canvasContext.save();
     canvasContext.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -722,6 +793,324 @@
     canvasContext.restore();
   }
 
+  function updateHandleVisibility() {
+    if (!cornerHandles.length) {
+      return false;
+    }
+
+    var ready =
+      preview &&
+      !preview.hidden &&
+      previewStage &&
+      lastDetectedRegion &&
+      lastDetectedRegion.corners &&
+      lastDetectedRegion.corners.length >= 4 &&
+      lastAnalyzedImage &&
+      lastOverlayCanvasWidth > 0 &&
+      lastOverlayCanvasHeight > 0;
+
+    for (var i = 0; i < cornerHandles.length; i++) {
+      var handle = cornerHandles[i];
+      if (!handle) {
+        continue;
+      }
+
+      if (ready) {
+        handle.classList.add("quad-handle--active");
+      } else {
+        handle.classList.remove("quad-handle--active");
+        handle.style.left = "";
+        handle.style.top = "";
+      }
+    }
+
+    return ready;
+  }
+
+  function updateHandlePositions() {
+    if (!cornerHandles.length) {
+      return;
+    }
+
+    var ready = updateHandleVisibility();
+    if (!ready) {
+      return;
+    }
+
+    var stageWidth = previewStage ? previewStage.clientWidth : 0;
+    var stageHeight = previewStage ? previewStage.clientHeight : 0;
+    if (!stageWidth || !stageHeight) {
+      return;
+    }
+
+    var displayScale = lastOverlayCanvasWidth ? stageWidth / lastOverlayCanvasWidth : 1;
+    if (!isFinite(displayScale) || displayScale <= 0) {
+      displayScale = 1;
+    }
+
+    var combinedScale = lastOverlayScale * displayScale;
+    if (!isFinite(combinedScale) || combinedScale <= 0) {
+      combinedScale = stageWidth / (lastAnalyzedImage && lastAnalyzedImage.width ? lastAnalyzedImage.width : 1);
+    }
+
+    var corners = lastDetectedRegion.corners;
+
+    for (var index = 0; index < cornerHandles.length; index++) {
+      var handle = cornerHandles[index];
+      var corner = corners[index];
+      if (!handle || !corner) {
+        continue;
+      }
+
+      handle.style.left = corner.x * combinedScale + "px";
+      handle.style.top = corner.y * combinedScale + "px";
+    }
+  }
+
+  function pointerPositionToImageCoords(event) {
+    if (!previewStage || !lastAnalyzedImage) {
+      return null;
+    }
+
+    var rect = previewStage.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) {
+      return null;
+    }
+
+    var stageX = event.clientX - rect.left;
+    var stageY = event.clientY - rect.top;
+
+    if (!isFinite(stageX) || !isFinite(stageY)) {
+      return null;
+    }
+
+    stageX = Math.max(0, Math.min(rect.width, stageX));
+    stageY = Math.max(0, Math.min(rect.height, stageY));
+
+    var displayScale = lastOverlayCanvasWidth ? rect.width / lastOverlayCanvasWidth : 1;
+    if (!isFinite(displayScale) || displayScale <= 0) {
+      displayScale = 1;
+    }
+
+    var combinedScale = lastOverlayScale * displayScale;
+    if (!isFinite(combinedScale) || combinedScale <= 0) {
+      combinedScale = rect.width / (lastAnalyzedImage.width || 1);
+    }
+
+    var imageX = stageX / combinedScale;
+    var imageY = stageY / combinedScale;
+
+    imageX = Math.max(0, Math.min(lastAnalyzedImage.width, imageX));
+    imageY = Math.max(0, Math.min(lastAnalyzedImage.height, imageY));
+
+    return { x: imageX, y: imageY };
+  }
+
+  function computeCornerBoundingBox(corners) {
+    if (!corners || corners.length < 4) {
+      return null;
+    }
+
+    var minX = corners[0].x;
+    var minY = corners[0].y;
+    var maxX = corners[0].x;
+    var maxY = corners[0].y;
+
+    for (var i = 1; i < corners.length; i++) {
+      var point = corners[i];
+      if (!point) {
+        continue;
+      }
+
+      if (point.x < minX) {
+        minX = point.x;
+      }
+      if (point.y < minY) {
+        minY = point.y;
+      }
+      if (point.x > maxX) {
+        maxX = point.x;
+      }
+      if (point.y > maxY) {
+        maxY = point.y;
+      }
+    }
+
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(0, maxX - minX),
+      height: Math.max(0, maxY - minY)
+    };
+  }
+
+  function refreshCalibrationAfterHandleChange() {
+    if (!lastAnalyzedImage || !lastDetectedRegion) {
+      calibrationState = null;
+    } else {
+      calibrationState = computeCalibration(
+        lastDetectedRegion,
+        lastAnalyzedImage.width,
+        lastAnalyzedImage.height
+      );
+    }
+
+    if (typeof window !== "undefined") {
+      window.gridFiniumCalibration = calibrationState || null;
+    }
+
+    updateCalibrationMetrics(calibrationState);
+    updateExportButtonState();
+  }
+
+  function updatePreviewFromCanvas() {
+    if (!calibrationCanvas || !previewImage) {
+      return;
+    }
+
+    var dataUrl = "";
+    try {
+      dataUrl = calibrationCanvas.toDataURL("image/png");
+    } catch (error) {
+      dataUrl = "";
+    }
+
+    if (!dataUrl) {
+      return;
+    }
+
+    lastPreviewDataUrl = dataUrl;
+    previewImage.src = dataUrl;
+    preview.hidden = false;
+  }
+
+  function renderOverlay(image, detectedRegion) {
+    if (!image) {
+      return;
+    }
+
+    pendingOverlayRender = false;
+    drawAnalysisOverlay(image, detectedRegion);
+    updatePreviewFromCanvas();
+    updateHandlePositions();
+  }
+
+  function requestOverlayRender() {
+    if (!lastAnalyzedImage) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      renderOverlay(lastAnalyzedImage, lastDetectedRegion);
+      return;
+    }
+
+    if (pendingOverlayRender) {
+      return;
+    }
+
+    pendingOverlayRender = true;
+
+    window.requestAnimationFrame(function () {
+      pendingOverlayRender = false;
+      renderOverlay(lastAnalyzedImage, lastDetectedRegion);
+    });
+  }
+
+  function applyCornerUpdateFromEvent(index, event) {
+    if (!lastDetectedRegion || !lastDetectedRegion.corners || lastDetectedRegion.corners.length <= index) {
+      return;
+    }
+
+    var point = pointerPositionToImageCoords(event);
+    if (!point) {
+      return;
+    }
+
+    var corners = lastDetectedRegion.corners;
+    var current = corners[index] || { x: point.x, y: point.y };
+    current.x = point.x;
+    current.y = point.y;
+    corners[index] = current;
+    lastDetectedRegion.boundingBox = computeCornerBoundingBox(corners);
+
+    refreshCalibrationAfterHandleChange();
+    updateHandlePositions();
+    requestOverlayRender();
+  }
+
+  function onHandlePointerDown(event) {
+    if (!event || !event.currentTarget) {
+      return;
+    }
+
+    var handle = event.currentTarget;
+    var index = Number(handle.dataset.index || handle.getAttribute("data-index"));
+
+    if (!isFinite(index) || index < 0) {
+      return;
+    }
+
+    if (!lastDetectedRegion || !lastDetectedRegion.corners || lastDetectedRegion.corners.length <= index) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (typeof handle.focus === "function") {
+      handle.focus();
+    }
+
+    if (typeof handle.setPointerCapture === "function") {
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore pointer capture errors.
+      }
+    }
+
+    handle.classList.add("quad-handle--dragging");
+
+    activeHandle = {
+      index: index,
+      pointerId: event.pointerId,
+      element: handle
+    };
+
+    applyCornerUpdateFromEvent(index, event);
+  }
+
+  function onHandlePointerMove(event) {
+    if (!activeHandle || activeHandle.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    applyCornerUpdateFromEvent(activeHandle.index, event);
+  }
+
+  function onHandlePointerUp(event) {
+    if (!activeHandle || activeHandle.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (activeHandle.element && typeof activeHandle.element.releasePointerCapture === "function") {
+      try {
+        activeHandle.element.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore pointer capture errors.
+      }
+    }
+
+    if (activeHandle.element) {
+      activeHandle.element.classList.remove("quad-handle--dragging");
+    }
+
+    activeHandle = null;
+  }
+
   function computeCalibration(detectedRegion, imageWidth, imageHeight) {
     if (!detectedRegion || !detectedRegion.corners || detectedRegion.corners.length < 4) {
       return null;
@@ -873,11 +1262,15 @@
 
     var image = new Image();
     image.onload = function () {
+      lastAnalyzedImage = image;
+      pendingOverlayRender = false;
+
       var detectedRegion = detectPaperBounds(image);
       if (detectedRegion && detectedRegion.corners) {
         detectedRegion.corners = orderPoints(detectedRegion.corners);
       }
       lastDetectedRegion = detectedRegion;
+      updateHandlePositions();
 
       calibrationState = computeCalibration(detectedRegion, image.width, image.height);
       updateExportButtonState();
@@ -887,24 +1280,9 @@
       }
 
       window.requestAnimationFrame(function () {
-        drawAnalysisOverlay(image, detectedRegion);
+        renderOverlay(image, detectedRegion);
 
         updateCalibrationMetrics(calibrationState);
-
-        if (calibrationCanvas && preview && previewImage) {
-          var outlinedImageUrl = "";
-
-          try {
-            outlinedImageUrl = calibrationCanvas.toDataURL("image/png");
-          } catch (error) {
-            outlinedImageUrl = "";
-          }
-
-          if (outlinedImageUrl) {
-            previewImage.src = outlinedImageUrl;
-            preview.hidden = false;
-          }
-        }
       });
     };
     image.src = currentImageDataUrl;
@@ -1015,7 +1393,7 @@
       var image = new Image();
       image.onload = function () {
         window.requestAnimationFrame(function () {
-          drawAnalysisOverlay(image, lastDetectedRegion);
+          renderOverlay(image, lastDetectedRegion);
 
           calibrationState = computeCalibration(lastDetectedRegion, image.width, image.height);
           updateExportButtonState();
@@ -1025,22 +1403,6 @@
           }
 
           updateCalibrationMetrics(calibrationState);
-
-          if (calibrationCanvas && preview && previewImage) {
-            var outlinedImageUrl = "";
-
-            try {
-              outlinedImageUrl = calibrationCanvas.toDataURL("image/png");
-            } catch (error) {
-              outlinedImageUrl = "";
-            }
-
-            if (outlinedImageUrl) {
-              previewImage.src = outlinedImageUrl;
-              preview.hidden = false;
-            }
-          }
-
         });
       };
       image.src = currentImageDataUrl;
@@ -1049,5 +1411,16 @@
 
   updateExportButtonState();
 })();
+
+
+
+
+
+
+
+
+
+
+
 
 
