@@ -21,6 +21,7 @@
   --button-contrast-bg: #0f0f12;
   --button-contrast-text: #ffffff;
   --track-border: rgba(15, 23, 42, 0.08);
+  --logo-filter: none;
   background-color: var(--page-bg);
   color: var(--text-primary);
 }
@@ -44,6 +45,7 @@
   --button-contrast-bg: #e2e8f0;
   --button-contrast-text: #0f172a;
   --track-border: rgba(148, 163, 184, 0.35);
+  --logo-filter: invert(1) brightness(1.35);
 }
 
 * {
@@ -105,6 +107,8 @@ a:hover {
   width: 3rem;
   height: 3rem;
   object-fit: contain;
+  filter: var(--logo-filter);
+  transition: filter 200ms ease;
 }
 
 .page-header h1 {
