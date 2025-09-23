@@ -573,7 +573,7 @@ button:not(:disabled):hover {
     padding: 2rem 0.75rem;
   }
 
-  .preview button,
+  .preview button:not(.quad-handle),
   .actions button,
   .capture-actions button,
   button.primary {
