@@ -76,7 +76,8 @@
 
   var storedThemePreference = getStoredTheme();
   var prefersDark = themeMediaQuery ? themeMediaQuery.matches : false;
-  applyTheme(storedThemePreference || (prefersDark ? "dark" : "light"));
+  var initialTheme = storedThemePreference || "dark";
+  applyTheme(initialTheme);
 
   if (themeMediaQuery) {
     var handleThemeChange = function (event) {
@@ -1048,3 +1049,5 @@
 
   updateExportButtonState();
 })();
+
+
