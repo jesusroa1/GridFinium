@@ -5,6 +5,7 @@
   var previewImage = document.getElementById("preview-image");
   var clearButton = document.getElementById("clear-button");
   var analyzeButton = document.getElementById("analyze-button");
+  var exportButton = document.getElementById("export-button");
   var paperSizeSelect = document.getElementById("paper-size");
   var metricScale = document.getElementById("metric-scale");
   var metricCoverage = document.getElementById("metric-coverage");
@@ -32,6 +33,10 @@
     lastDetectedRegion = null;
     calibrationState = null;
 
+    if (exportButton) {
+      exportButton.disabled = true;
+    }
+
     if (typeof window !== "undefined") {
       window.gridFiniumCalibration = null;
     }
@@ -45,6 +50,7 @@
     canvasContext.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
 
     updateCalibrationMetrics(null);
+    updateExportButtonState();
   }
 
   function resetPreview() {
@@ -114,6 +120,51 @@
       default:
         return { short: 215.9, long: 279.4, unit: "mm" };
     }
+  }
+
+  function orderPoints(corners) {
+    if (!corners || corners.length < 4) {
+      return corners ? corners.slice() : [];
+    }
+
+    var indexTl = 0;
+    var indexTr = 0;
+    var indexBr = 0;
+    var indexBl = 0;
+    var minSum = Infinity;
+    var maxSum = -Infinity;
+    var minDiff = Infinity;
+    var maxDiff = -Infinity;
+
+    for (var i = 0; i < corners.length; i++) {
+      var point = corners[i];
+      var sum = point.x + point.y;
+      var diff = point.x - point.y;
+
+      if (sum < minSum) {
+        minSum = sum;
+        indexTl = i;
+      }
+      if (sum > maxSum) {
+        maxSum = sum;
+        indexBr = i;
+      }
+      if (diff > maxDiff) {
+        maxDiff = diff;
+        indexTr = i;
+      }
+      if (diff < minDiff) {
+        minDiff = diff;
+        indexBl = i;
+      }
+    }
+
+    return [
+      { x: corners[indexTl].x, y: corners[indexTl].y },
+      { x: corners[indexTr].x, y: corners[indexTr].y },
+      { x: corners[indexBr].x, y: corners[indexBr].y },
+      { x: corners[indexBl].x, y: corners[indexBl].y }
+    ];
   }
 
   function detectPaperBounds(image) {
@@ -409,9 +460,12 @@
     var overlayBounds = null;
 
     if (detectedRegion && detectedRegion.corners) {
-      overlayCorners = detectedRegion.corners.map(function (point) {
-        return { x: point.x * scale, y: point.y * scale };
-      });
+      var orderedCorners = orderPoints(detectedRegion.corners);
+      if (orderedCorners.length >= 4) {
+        overlayCorners = orderedCorners.map(function (point) {
+          return { x: point.x * scale, y: point.y * scale };
+        });
+      }
 
       if (detectedRegion.boundingBox) {
         overlayBounds = {
@@ -586,7 +640,11 @@
       return null;
     }
 
-    var corners = detectedRegion.corners;
+    var corners = orderPoints(detectedRegion.corners);
+    if (!corners || corners.length < 4) {
+      return null;
+    }
+
     var edges = [];
 
     for (var edgeIndex = 0; edgeIndex < corners.length; edgeIndex++) {
@@ -610,6 +668,31 @@
       return null;
     }
 
+    var ratio = widthPixels > heightPixels ? widthPixels / heightPixels : heightPixels / widthPixels;
+    var targetRatio = getPaperAspectRatio();
+    if (!isFinite(ratio) || Math.abs(ratio - targetRatio) > 0.25) {
+      return null;
+    }
+
+    var centroidX = 0;
+    var centroidY = 0;
+    for (var i = 0; i < corners.length; i++) {
+      centroidX += corners[i].x;
+      centroidY += corners[i].y;
+    }
+    centroidX /= corners.length;
+    centroidY /= corners.length;
+
+    if (imageWidth && imageHeight) {
+      var centerX = imageWidth / 2;
+      var centerY = imageHeight / 2;
+      var toleranceX = imageWidth * 0.35;
+      var toleranceY = imageHeight * 0.35;
+      if (Math.abs(centroidX - centerX) > toleranceX || Math.abs(centroidY - centerY) > toleranceY) {
+        return null;
+      }
+    }
+
     var physical = getPaperPhysicalDimensions();
     var longSide = physical.long;
     var shortSide = physical.short;
@@ -621,6 +704,7 @@
     var mmPerPixelX = widthPhysical / widthPixels;
     var mmPerPixelY = heightPhysical / heightPixels;
     var mmPerPixel = (mmPerPixelX + mmPerPixelY) / 2;
+    var pxPerMm = mmPerPixel > 0 ? 1 / mmPerPixel : null;
 
     if (!isFinite(mmPerPixel) || mmPerPixel <= 0) {
       return null;
@@ -640,6 +724,7 @@
       mmPerPixel: mmPerPixel,
       mmPerPixelX: mmPerPixelX,
       mmPerPixelY: mmPerPixelY,
+      pxPerMm: pxPerMm,
       widthPixels: widthPixels,
       heightPixels: heightPixels,
       orientation: landscape ? "landscape" : "portrait",
@@ -675,6 +760,25 @@
     }
   }
 
+  function updateExportButtonState() {
+    if (!exportButton) {
+      return;
+    }
+
+    var ready = Boolean(
+      calibrationState &&
+      calibrationState.corners &&
+      calibrationState.corners.length >= 4 &&
+      typeof calibrationState.pxPerMm === "number" &&
+      isFinite(calibrationState.pxPerMm) &&
+      lastDetectedRegion &&
+      lastDetectedRegion.corners &&
+      lastDetectedRegion.corners.length >= 4
+    );
+
+    exportButton.disabled = !ready;
+  }
+
   function runAnalysis() {
     if (!currentImageDataUrl) {
       return;
@@ -683,9 +787,13 @@
     var image = new Image();
     image.onload = function () {
       var detectedRegion = detectPaperBounds(image);
+      if (detectedRegion && detectedRegion.corners) {
+        detectedRegion.corners = orderPoints(detectedRegion.corners);
+      }
       lastDetectedRegion = detectedRegion;
 
       calibrationState = computeCalibration(detectedRegion, image.width, image.height);
+      updateExportButtonState();
 
       if (typeof window !== "undefined") {
         window.gridFiniumCalibration = calibrationState;
@@ -713,6 +821,78 @@
       });
     };
     image.src = currentImageDataUrl;
+  }
+
+  function buildExportPayload() {
+    if (!calibrationState || !lastDetectedRegion || !lastDetectedRegion.corners) {
+      return null;
+    }
+
+    if (typeof calibrationState.pxPerMm !== "number" || !isFinite(calibrationState.pxPerMm)) {
+      return null;
+    }
+
+    var orderedCorners = orderPoints(lastDetectedRegion.corners);
+    if (!orderedCorners || orderedCorners.length < 4) {
+      return null;
+    }
+
+    return {
+      paper: {
+        size: paperSizeSelect ? paperSizeSelect.value : "letter",
+        pxPerMM: calibrationState.pxPerMm,
+        coverage: calibrationState.coverage
+      },
+      quad: {
+        tl: orderedCorners[0],
+        tr: orderedCorners[1],
+        br: orderedCorners[2],
+        bl: orderedCorners[3]
+      },
+      image: {
+        width: calibrationState.imageWidth,
+        height: calibrationState.imageHeight
+      }
+    };
+  }
+
+  function downloadJSON(obj, filename) {
+    if (!obj) {
+      return;
+    }
+
+    var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
+
+  if (exportButton) {
+    exportButton.addEventListener("click", function () {
+      var payload = buildExportPayload();
+      if (!payload) {
+        if (typeof window !== "undefined" && window.alert) {
+          window.alert("Run Gridify first.");
+        } else {
+          console.warn("Run Gridify first.");
+        }
+        return;
+      }
+
+      downloadJSON(payload, "gridfinium_export.json");
+
+      // Placeholder for future backend integration:
+      // fetch("/api/export", {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify(payload)
+      // });
+    });
   }
 
   dropzone.addEventListener("dragover", function (event) {
@@ -751,6 +931,7 @@
           drawAnalysisOverlay(image, lastDetectedRegion);
 
           calibrationState = computeCalibration(lastDetectedRegion, image.width, image.height);
+          updateExportButtonState();
 
           if (typeof window !== "undefined") {
             window.gridFiniumCalibration = calibrationState;
@@ -778,4 +959,6 @@
       image.src = currentImageDataUrl;
     });
   }
+
+  updateExportButtonState();
 })();
