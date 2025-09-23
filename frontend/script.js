@@ -18,6 +18,92 @@
     detectionCanvas.getContext("2d");
   var lastDetectedRegion = null;
   var calibrationState = null;
+  var themeToggle = document.getElementById("theme-toggle");
+  var themeLabel = document.getElementById("theme-toggle-label");
+  var themeStorageKey = "gridfinium-theme";
+  var themeMediaQuery =
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : null;
+
+  function getStoredTheme() {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return null;
+    }
+    try {
+      var stored = window.localStorage.getItem(themeStorageKey);
+      if (stored === "dark" || stored === "light") {
+        return stored;
+      }
+    } catch (error) {
+      // Local storage might be unavailable (e.g. privacy mode). Ignore errors.
+    }
+    return null;
+  }
+
+  function storeTheme(theme) {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(themeStorageKey, theme);
+    } catch (error) {
+      // Ignore storage errors and keep working with in-memory preference.
+    }
+  }
+
+  function applyTheme(theme) {
+    var nextTheme = theme === "dark" ? "dark" : "light";
+    var root = document.documentElement;
+
+    if (root) {
+      root.setAttribute("data-theme", nextTheme);
+    }
+
+    if (themeToggle) {
+      var isDark = nextTheme === "dark";
+      themeToggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+      themeToggle.setAttribute(
+        "aria-label",
+        isDark ? "Switch to light mode" : "Switch to dark mode"
+      );
+    }
+
+    if (themeLabel) {
+      themeLabel.textContent = nextTheme === "dark" ? "Dark mode" : "Light mode";
+    }
+  }
+
+  var storedThemePreference = getStoredTheme();
+  var prefersDark = themeMediaQuery ? themeMediaQuery.matches : false;
+  applyTheme(storedThemePreference || (prefersDark ? "dark" : "light"));
+
+  if (themeMediaQuery) {
+    var handleThemeChange = function (event) {
+      if (getStoredTheme() !== null) {
+        return;
+      }
+      applyTheme(event.matches ? "dark" : "light");
+    };
+
+    if (typeof themeMediaQuery.addEventListener === "function") {
+      themeMediaQuery.addEventListener("change", handleThemeChange);
+    } else if (typeof themeMediaQuery.addListener === "function") {
+      themeMediaQuery.addListener(handleThemeChange);
+    }
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", function () {
+      var currentTheme =
+        document.documentElement.getAttribute("data-theme") === "dark"
+          ? "dark"
+          : "light";
+      var nextTheme = currentTheme === "dark" ? "light" : "dark";
+      applyTheme(nextTheme);
+      storeTheme(nextTheme);
+    });
+  }
 
   if (fileInput && typeof navigator !== "undefined") {
     var isIOS = /iP(ad|hone|od)/.test(navigator.platform || "") ||
