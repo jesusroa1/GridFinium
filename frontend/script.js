@@ -10,11 +10,13 @@
   var paperSizeSelect = document.getElementById("paper-size");
   var metricScale = document.getElementById("metric-scale");
   var metricCoverage = document.getElementById("metric-coverage");
+  var metricCorners = document.getElementById("metric-corners");
   var calibrationCanvas = document.createElement("canvas");
   var canvasContext = calibrationCanvas.getContext("2d");
   var currentImageDataUrl = "";
   var cornerHandles = [];
   var handleCornerKeys = ["tl", "tr", "br", "bl"];
+  var metricCornerLabels = null;
   var activeHandle = null;
   var lastAnalyzedImage = null;
   var lastOverlayScale = 1;
@@ -37,6 +39,17 @@
     typeof window !== "undefined" && window.matchMedia
       ? window.matchMedia("(prefers-color-scheme: dark)")
       : null;
+
+  if (metricCorners) {
+    metricCornerLabels = {};
+
+    for (var labelIndex = 0; labelIndex < handleCornerKeys.length; labelIndex++) {
+      var cornerKey = handleCornerKeys[labelIndex];
+      metricCornerLabels[cornerKey] = metricCorners.querySelector(
+        '[data-corner="' + cornerKey + '"]'
+      );
+    }
+  }
 
   function getStoredTheme() {
     if (typeof window === "undefined" || !window.localStorage) {
@@ -1298,7 +1311,52 @@
     };
   }
 
+  function updateCornerCoordinatesDisplay(corners) {
+    if (!metricCornerLabels) {
+      return;
+    }
+
+    for (var index = 0; index < handleCornerKeys.length; index++) {
+      var key = handleCornerKeys[index];
+      var labelElement = metricCornerLabels[key];
+      if (!labelElement) {
+        continue;
+      }
+
+      var prefix = key.toUpperCase();
+      var corner = corners && corners[index];
+      if (
+        corner &&
+        typeof corner.x === "number" &&
+        isFinite(corner.x) &&
+        typeof corner.y === "number" &&
+        isFinite(corner.y)
+      ) {
+        labelElement.textContent =
+          prefix + ": (" + corner.x.toFixed(1) + ", " + corner.y.toFixed(1) + ")";
+      } else {
+        labelElement.textContent = prefix + ": --";
+      }
+    }
+  }
+
   function updateCalibrationMetrics(calibration) {
+    if (metricCornerLabels) {
+      var cornersToDisplay = null;
+
+      if (calibration && calibration.corners && calibration.corners.length >= 4) {
+        cornersToDisplay = calibration.corners;
+      } else if (
+        lastDetectedRegion &&
+        lastDetectedRegion.corners &&
+        lastDetectedRegion.corners.length >= 4
+      ) {
+        cornersToDisplay = orderPoints(lastDetectedRegion.corners);
+      }
+
+      updateCornerCoordinatesDisplay(cornersToDisplay);
+    }
+
     if (metricScale) {
       if (calibration && calibration.mmPerPixel) {
         var pixelsPerMm = 1 / calibration.mmPerPixel;

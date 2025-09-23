@@ -376,6 +376,18 @@ a:hover {
   color: var(--metric-value);
 }
 
+.metric-value--stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.metric-value--stacked span {
+  display: block;
+}
+
 .page-footer {
   border-top: none;
   border-inline: none;
