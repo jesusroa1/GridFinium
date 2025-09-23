@@ -664,7 +664,7 @@
       ? Math.max(overlayBounds.width, overlayBounds.height)
       : Math.max(canvasWidth, canvasHeight);
     var lineWidth = Math.max(3, Math.round(diagLength * 0.008));
-    var cornerLength = Math.max(18, Math.round(diagLength * 0.12));
+    var baseCornerLength = Math.max(18, Math.round(diagLength * 0.12));
 
     canvasContext.strokeStyle = "#2fff7f";
     canvasContext.lineWidth = lineWidth;
@@ -700,16 +700,19 @@
       dxPrev /= lenPrev;
       dyPrev /= lenPrev;
 
+      var nextCornerLength = Math.min(baseCornerLength, lenNext * 0.35);
+      var prevCornerLength = Math.min(baseCornerLength, lenPrev * 0.35);
+
       canvasContext.moveTo(current.x, current.y);
       canvasContext.lineTo(
-        current.x + dxPrev * cornerLength,
-        current.y + dyPrev * cornerLength
+        current.x + dxPrev * prevCornerLength,
+        current.y + dyPrev * prevCornerLength
       );
 
       canvasContext.moveTo(current.x, current.y);
       canvasContext.lineTo(
-        current.x + dxNext * cornerLength,
-        current.y + dyNext * cornerLength
+        current.x + dxNext * nextCornerLength,
+        current.y + dyNext * nextCornerLength
       );
     }
 
