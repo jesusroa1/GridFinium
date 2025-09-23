@@ -226,7 +226,7 @@ a:hover {
   position: absolute;
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: 50%;
   border: 2px solid var(--surface);
   background: rgba(59, 130, 246, 0.9);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
@@ -236,10 +236,17 @@ a:hover {
   z-index: 5;
   touch-action: none;
   display: none;
+  -webkit-appearance: none;
+  appearance: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
 }
 
 .quad-handle.quad-handle--active {
-  display: block;
+  display: inline-flex;
 }
 
 .quad-handle:active {
