@@ -70,6 +70,12 @@
           </div>
         </li>
       </ul>
+      <section class="warp-preview" id="warp-preview" hidden>
+        <h3>Perspective-corrected (top-down) view</h3>
+        <canvas id="warped-canvas" width="0" height="0" aria-label="Perspective-corrected paper"></canvas>
+        <p class="warp-diagnostic" id="warp-reprojection" aria-live="polite"></p>
+        <p class="warp-error" id="warp-error" role="status" hidden></p>
+      </section>
     </section>
   </main>
 
@@ -77,7 +83,8 @@
     <p class="privacy-note">Your photo stays in the browser</p>
   </footer>
 
-  <script src="script.js"></script>
+  <script defer src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <script defer src="script.js"></script>
 </body>
 </html>
 

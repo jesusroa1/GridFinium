@@ -11,6 +11,10 @@
   var metricScale = document.getElementById("metric-scale");
   var metricCoverage = document.getElementById("metric-coverage");
   var metricCorners = document.getElementById("metric-corners");
+  var warpContainer = document.getElementById("warp-preview");
+  var warpCanvas = document.getElementById("warped-canvas");
+  var warpReprojection = document.getElementById("warp-reprojection");
+  var warpError = document.getElementById("warp-error");
   var calibrationCanvas = document.createElement("canvas");
   var canvasContext = calibrationCanvas.getContext("2d");
   var currentImageDataUrl = "";
@@ -30,6 +34,15 @@
     detectionCanvas.getContext("2d");
   var lastDetectedRegion = null;
   var calibrationState = null;
+  var warpState = null;
+  var lastWarpSignature = null;
+  var pendingHomographyRequest = null;
+  var cvReady =
+    typeof cv !== "undefined" &&
+    cv &&
+    typeof cv.Mat === "function" &&
+    typeof cv.getPerspectiveTransform === "function";
+  var cvCheckIntervalId = null;
   var themeToggle = document.getElementById("theme-toggle");
   var themeLabel = document.getElementById("theme-toggle-label");
   var deploymentInfo = document.getElementById("deployment-info");
@@ -39,6 +52,30 @@
     typeof window !== "undefined" && window.matchMedia
       ? window.matchMedia("(prefers-color-scheme: dark)")
       : null;
+
+  if (typeof window !== "undefined") {
+    var moduleConfig = window.Module || {};
+    var previousRuntimeInitialized = moduleConfig.onRuntimeInitialized;
+    moduleConfig.onRuntimeInitialized = function () {
+      if (typeof previousRuntimeInitialized === "function") {
+        try {
+          previousRuntimeInitialized();
+        } catch (runtimeError) {
+          console.error(runtimeError);
+        }
+      }
+
+      cvReady =
+        typeof cv !== "undefined" &&
+        cv &&
+        typeof cv.Mat === "function" &&
+        typeof cv.getPerspectiveTransform === "function";
+      if (cvReady) {
+        handlePendingHomography();
+      }
+    };
+    window.Module = moduleConfig;
+  }
 
   if (metricCorners) {
     metricCornerLabels = {};
@@ -257,6 +294,7 @@
   function resetAnalysis() {
     lastDetectedRegion = null;
     calibrationState = null;
+    resetWarpState();
     lastAnalyzedImage = null;
     lastOverlayScale = 1;
     lastOverlayCanvasWidth = 0;
@@ -372,49 +410,794 @@
     }
   }
 
-  function orderPoints(corners) {
-    if (!corners || corners.length < 4) {
-      return corners ? corners.slice() : [];
+  function orderQuad(points) {
+    if (!points || points.length < 4) {
+      return [];
     }
 
-    var indexTl = 0;
-    var indexTr = 0;
-    var indexBr = 0;
-    var indexBl = 0;
+    var filtered = [];
+
+    for (var index = 0; index < points.length; index++) {
+      var point = points[index];
+      if (!point) {
+        continue;
+      }
+
+      var x = Number(point.x);
+      var y = Number(point.y);
+
+      if (!isFinite(x) || !isFinite(y)) {
+        continue;
+      }
+
+      filtered.push({ x: x, y: y });
+      if (filtered.length === 4) {
+        break;
+      }
+    }
+
+    if (filtered.length !== 4) {
+      return [];
+    }
+
+    var centroidX = 0;
+    var centroidY = 0;
+
+    for (var centroidIndex = 0; centroidIndex < filtered.length; centroidIndex++) {
+      centroidX += filtered[centroidIndex].x;
+      centroidY += filtered[centroidIndex].y;
+    }
+
+    centroidX /= filtered.length;
+    centroidY /= filtered.length;
+
+    var pointsWithAngles = filtered.map(function (point) {
+      return {
+        point: { x: point.x, y: point.y },
+        angle: Math.atan2(point.y - centroidY, point.x - centroidX)
+      };
+    });
+
+    pointsWithAngles.sort(function (a, b) {
+      return a.angle - b.angle;
+    });
+
+    var startIndex = 0;
     var minSum = Infinity;
-    var maxSum = -Infinity;
-    var minDiff = Infinity;
-    var maxDiff = -Infinity;
 
-    for (var i = 0; i < corners.length; i++) {
-      var point = corners[i];
-      var sum = point.x + point.y;
-      var diff = point.x - point.y;
-
+    for (var angleIndex = 0; angleIndex < pointsWithAngles.length; angleIndex++) {
+      var candidate = pointsWithAngles[angleIndex].point;
+      var sum = candidate.x + candidate.y;
       if (sum < minSum) {
         minSum = sum;
-        indexTl = i;
-      }
-      if (sum > maxSum) {
-        maxSum = sum;
-        indexBr = i;
-      }
-      if (diff > maxDiff) {
-        maxDiff = diff;
-        indexTr = i;
-      }
-      if (diff < minDiff) {
-        minDiff = diff;
-        indexBl = i;
+        startIndex = angleIndex;
       }
     }
 
-    return [
-      { x: corners[indexTl].x, y: corners[indexTl].y },
-      { x: corners[indexTr].x, y: corners[indexTr].y },
-      { x: corners[indexBr].x, y: corners[indexBr].y },
-      { x: corners[indexBl].x, y: corners[indexBl].y }
+    var ordered = [];
+    for (var orderedIndex = 0; orderedIndex < pointsWithAngles.length; orderedIndex++) {
+      var nextIndex = (startIndex + orderedIndex) % pointsWithAngles.length;
+      var nextPoint = pointsWithAngles[nextIndex].point;
+      ordered.push({ x: nextPoint.x, y: nextPoint.y });
+    }
+
+    if (ordered.length !== 4) {
+      return [];
+    }
+
+    var twiceArea = 0;
+    for (var areaIndex = 0; areaIndex < ordered.length; areaIndex++) {
+      var current = ordered[areaIndex];
+      var following = ordered[(areaIndex + 1) % ordered.length];
+      twiceArea += current.x * following.y - following.x * current.y;
+    }
+
+    var polygonArea = Math.abs(twiceArea) * 0.5;
+    if (!isFinite(polygonArea) || polygonArea < 1) {
+      return [];
+    }
+
+    var crossSign = 0;
+    for (var crossIndex = 0; crossIndex < ordered.length; crossIndex++) {
+      var a = ordered[crossIndex];
+      var b = ordered[(crossIndex + 1) % ordered.length];
+      var c = ordered[(crossIndex + 2) % ordered.length];
+
+      var abx = b.x - a.x;
+      var aby = b.y - a.y;
+      var bcx = c.x - b.x;
+      var bcy = c.y - b.y;
+
+      var crossProduct = abx * bcy - aby * bcx;
+      if (!isFinite(crossProduct)) {
+        return [];
+      }
+
+      var abLength = Math.sqrt(abx * abx + aby * aby);
+      var bcLength = Math.sqrt(bcx * bcx + bcy * bcy);
+      var lengthProduct = abLength * bcLength;
+
+      if (lengthProduct > 0) {
+        var normalized = Math.abs(crossProduct) / lengthProduct;
+        if (normalized < 1e-3) {
+          return [];
+        }
+      }
+
+      if (Math.abs(crossProduct) < 1e-4) {
+        continue;
+      }
+
+      var sign = crossProduct > 0 ? 1 : -1;
+      if (crossSign === 0) {
+        crossSign = sign;
+      } else if (crossSign * sign < 0) {
+        return [];
+      }
+    }
+
+    return ordered;
+  }
+
+  function orderPoints(corners) {
+    return orderQuad(corners);
+  }
+
+  function distanceBetweenPoints(a, b) {
+    if (!a || !b) {
+      return NaN;
+    }
+
+    var dx = Number(b.x) - Number(a.x);
+    var dy = Number(b.y) - Number(a.y);
+
+    if (!isFinite(dx) || !isFinite(dy)) {
+      return NaN;
+    }
+
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function resetWarpState() {
+    warpState = null;
+    lastWarpSignature = null;
+    pendingHomographyRequest = null;
+
+    if (warpReprojection) {
+      warpReprojection.textContent = "";
+      warpReprojection.removeAttribute("data-status");
+    }
+
+    if (warpError) {
+      warpError.textContent = "";
+      warpError.hidden = true;
+    }
+
+    if (warpContainer) {
+      warpContainer.hidden = true;
+      warpContainer.removeAttribute("data-status");
+    }
+
+    if (warpCanvas) {
+      var warpContext = warpCanvas.getContext("2d");
+      if (warpContext) {
+        warpContext.clearRect(0, 0, warpCanvas.width, warpCanvas.height);
+      }
+      warpCanvas.width = 0;
+      warpCanvas.height = 0;
+    }
+
+    if (typeof window !== "undefined") {
+      window.gridFiniumWarp = null;
+    }
+  }
+
+  function showWarpError(message, keepExistingView) {
+    if (warpError) {
+      warpError.textContent = message;
+      warpError.hidden = false;
+    }
+
+    if (warpContainer) {
+      warpContainer.hidden = false;
+      warpContainer.setAttribute(
+        "data-status",
+        keepExistingView ? "warning" : "error"
+      );
+    }
+  }
+
+  function clearWarpError() {
+    if (warpError) {
+      warpError.textContent = "";
+      warpError.hidden = true;
+    }
+
+    if (warpContainer) {
+      warpContainer.removeAttribute("data-status");
+    }
+  }
+
+  function setWarpReprojectionMessage(meanError) {
+    if (!warpReprojection) {
+      return;
+    }
+
+    if (!isFinite(meanError)) {
+      warpReprojection.textContent = "";
+      warpReprojection.removeAttribute("data-status");
+      if (warpContainer) {
+        warpContainer.removeAttribute("data-status");
+      }
+      return;
+    }
+
+    var message = "Mean reprojection error: " + meanError.toFixed(2) + " px";
+
+    if (meanError > 5) {
+      message += " (adjust corners for best accuracy)";
+      warpReprojection.setAttribute("data-status", "warning");
+      if (warpContainer && !warpContainer.hasAttribute("data-status")) {
+        warpContainer.setAttribute("data-status", "warning");
+      }
+    } else {
+      warpReprojection.removeAttribute("data-status");
+      if (warpContainer && warpContainer.getAttribute("data-status") === "warning") {
+        warpContainer.removeAttribute("data-status");
+      }
+    }
+
+    warpReprojection.textContent = message;
+  }
+
+  function buildPaperSpecForWarp(corners, calibration) {
+    var physical = getPaperPhysicalDimensions();
+    if (!physical) {
+      return { widthMM: 215.9, heightMM: 279.4 };
+    }
+
+    var orientation = calibration && calibration.orientation;
+
+    if (!orientation && corners && corners.length >= 4) {
+      var topWidth = distanceBetweenPoints(corners[0], corners[1]);
+      var leftHeight = distanceBetweenPoints(corners[0], corners[3]);
+
+      if (isFinite(topWidth) && isFinite(leftHeight)) {
+        orientation = topWidth >= leftHeight ? "landscape" : "portrait";
+      }
+    }
+
+    if (orientation === "landscape") {
+      return { widthMM: physical.long, heightMM: physical.short };
+    }
+
+    return { widthMM: physical.short, heightMM: physical.long };
+  }
+
+  function handlePendingHomography() {
+    if (!pendingHomographyRequest) {
+      return;
+    }
+
+    var request = pendingHomographyRequest;
+    pendingHomographyRequest = null;
+
+    computeAndDisplayHomography(
+      request.fourPts,
+      request.paperSpec,
+      request.pixelsPerMM,
+      request.srcImage,
+      true
+    );
+  }
+
+  function ensureCvInitialization() {
+    if (cvReady) {
+      if (cvCheckIntervalId && typeof window !== "undefined") {
+        window.clearInterval(cvCheckIntervalId);
+        cvCheckIntervalId = null;
+      }
+      return;
+    }
+
+    if (
+      typeof cv !== "undefined" &&
+      cv &&
+      typeof cv.Mat === "function" &&
+      typeof cv.getPerspectiveTransform === "function"
+    ) {
+      cvReady = true;
+      if (cvCheckIntervalId && typeof window !== "undefined") {
+        window.clearInterval(cvCheckIntervalId);
+        cvCheckIntervalId = null;
+      }
+      handlePendingHomography();
+      return;
+    }
+
+    if (
+      !cvCheckIntervalId &&
+      typeof window !== "undefined" &&
+      typeof window.setInterval === "function"
+    ) {
+      cvCheckIntervalId = window.setInterval(function () {
+        if (
+          typeof cv !== "undefined" &&
+          cv &&
+          typeof cv.Mat === "function" &&
+          typeof cv.getPerspectiveTransform === "function"
+        ) {
+          cvReady = true;
+          window.clearInterval(cvCheckIntervalId);
+          cvCheckIntervalId = null;
+          handlePendingHomography();
+        }
+      }, 250);
+    }
+  }
+
+  function scheduleHomographyComputation(
+    corners,
+    paperSpec,
+    pixelsPerMM,
+    srcImageElOrMat
+  ) {
+    if (!corners || corners.length < 4 || !srcImageElOrMat) {
+      if (!warpState) {
+        resetWarpState();
+      }
+      return;
+    }
+
+    var copiedCorners = corners.map(function (point) {
+      return { x: point.x, y: point.y };
+    });
+
+    var specCopy = paperSpec
+      ? { widthMM: paperSpec.widthMM, heightMM: paperSpec.heightMM }
+      : null;
+
+    var invokeComputation = function () {
+      computeAndDisplayHomography(
+        copiedCorners,
+        specCopy,
+        pixelsPerMM,
+        srcImageElOrMat,
+        false
+      );
+    };
+
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(invokeComputation);
+    } else {
+      invokeComputation();
+    }
+  }
+
+  function transformPointWithMatrix(point, matrixData) {
+    if (!point || !matrixData || matrixData.length !== 9) {
+      return null;
+    }
+
+    if (typeof cv === "undefined" || !cv.matFromArray || !cv.perspectiveTransform) {
+      return null;
+    }
+
+    var srcMat = null;
+    var dstMat = null;
+    var matrix = null;
+
+    try {
+      var x = Number(point.x);
+      var y = Number(point.y);
+
+      if (!isFinite(x) || !isFinite(y)) {
+        return null;
+      }
+
+      srcMat = cv.matFromArray(1, 1, cv.CV_32FC2, [x, y]);
+      matrix = cv.matFromArray(3, 3, cv.CV_64F, matrixData);
+      dstMat = new cv.Mat();
+      cv.perspectiveTransform(srcMat, dstMat, matrix);
+
+      if (!dstMat.data32F || dstMat.data32F.length < 2) {
+        return null;
+      }
+
+      return { x: dstMat.data32F[0], y: dstMat.data32F[1] };
+    } catch (error) {
+      return null;
+    } finally {
+      if (srcMat) {
+        srcMat.delete();
+      }
+      if (dstMat) {
+        dstMat.delete();
+      }
+      if (matrix) {
+        matrix.delete();
+      }
+    }
+  }
+
+  function createTransformFunction(matrixData) {
+    if (!matrixData) {
+      return function () {
+        return null;
+      };
+    }
+
+    var storedMatrix = matrixData.slice();
+    return function (point) {
+      return transformPointWithMatrix(point, storedMatrix);
+    };
+  }
+
+  function computeAndDisplayHomography(
+    fourPts,
+    paperSpec,
+    pixelsPerMM,
+    srcImageElOrMat,
+    isRetry
+  ) {
+    if (!isRetry) {
+      pendingHomographyRequest = null;
+    }
+
+    if (!fourPts || fourPts.length < 4) {
+      if (warpState && warpState.warpedImageUrl) {
+        showWarpError(
+          "Select four valid corners to compute the perspective view.",
+          true
+        );
+      } else {
+        resetWarpState();
+      }
+      return;
+    }
+
+    var ordered = orderQuad(fourPts);
+    if (!ordered || ordered.length !== 4) {
+      if (warpState && warpState.warpedImageUrl) {
+        showWarpError(
+          "Corner order is invalid. Please adjust the markers and try again.",
+          true
+        );
+      } else {
+        resetWarpState();
+      }
+      return;
+    }
+
+    var spec = paperSpec;
+    if (!spec || !isFinite(spec.widthMM) || !isFinite(spec.heightMM)) {
+      spec = buildPaperSpecForWarp(ordered, calibrationState);
+    }
+
+    var widthMM = Number(spec.widthMM);
+    var heightMM = Number(spec.heightMM);
+
+    if (!isFinite(widthMM) || widthMM <= 0 || !isFinite(heightMM) || heightMM <= 0) {
+      showWarpError("Paper dimensions are invalid.", Boolean(warpState));
+      return;
+    }
+
+    var effectivePixelsPerMM =
+      typeof pixelsPerMM === "number" && isFinite(pixelsPerMM) && pixelsPerMM > 0
+        ? pixelsPerMM
+        : 3; // TODO: Replace fallback density once calibration is finalized.
+
+    var srcWidth = 0;
+    var srcHeight = 0;
+
+    if (srcImageElOrMat) {
+      if (
+        typeof srcImageElOrMat.cols === "number" &&
+        typeof srcImageElOrMat.rows === "number"
+      ) {
+        srcWidth = Number(srcImageElOrMat.cols);
+        srcHeight = Number(srcImageElOrMat.rows);
+      } else if (
+        typeof srcImageElOrMat.naturalWidth === "number" &&
+        typeof srcImageElOrMat.naturalHeight === "number"
+      ) {
+        srcWidth = Number(srcImageElOrMat.naturalWidth);
+        srcHeight = Number(srcImageElOrMat.naturalHeight);
+      } else if (
+        typeof srcImageElOrMat.videoWidth === "number" &&
+        typeof srcImageElOrMat.videoHeight === "number"
+      ) {
+        srcWidth = Number(srcImageElOrMat.videoWidth);
+        srcHeight = Number(srcImageElOrMat.videoHeight);
+      } else if (
+        typeof srcImageElOrMat.width === "number" &&
+        typeof srcImageElOrMat.height === "number"
+      ) {
+        srcWidth = Number(srcImageElOrMat.width);
+        srcHeight = Number(srcImageElOrMat.height);
+      }
+    }
+
+    if (!isFinite(srcWidth) || !isFinite(srcHeight) || srcWidth <= 0 || srcHeight <= 0) {
+      showWarpError("Source image data is unavailable for warping.", Boolean(warpState));
+      return;
+    }
+
+    var destinationWidth = Math.max(1, Math.round(widthMM * effectivePixelsPerMM));
+    var destinationHeight = Math.max(1, Math.round(heightMM * effectivePixelsPerMM));
+
+    if (destinationWidth <= 0 || destinationHeight <= 0) {
+      showWarpError("Computed warp dimensions are invalid.", Boolean(warpState));
+      return;
+    }
+
+    var maxOutputSide = 4000;
+    var largestSide = Math.max(destinationWidth, destinationHeight);
+    if (largestSide > maxOutputSide) {
+      var downscale = maxOutputSide / largestSide;
+      destinationWidth = Math.max(1, Math.round(destinationWidth * downscale));
+      destinationHeight = Math.max(1, Math.round(destinationHeight * downscale));
+      effectivePixelsPerMM *= downscale;
+    }
+
+    var destinationCorners = [
+      { x: 0, y: 0 },
+      { x: destinationWidth - 1, y: 0 },
+      { x: destinationWidth - 1, y: destinationHeight - 1 },
+      { x: 0, y: destinationHeight - 1 }
     ];
+
+    var destinationArray = [
+      0,
+      0,
+      destinationWidth - 1,
+      0,
+      destinationWidth - 1,
+      destinationHeight - 1,
+      0,
+      destinationHeight - 1
+    ];
+
+    var signatureParts = [];
+    for (var sigIndex = 0; sigIndex < ordered.length; sigIndex++) {
+      signatureParts.push(ordered[sigIndex].x.toFixed(3));
+      signatureParts.push(ordered[sigIndex].y.toFixed(3));
+    }
+    signatureParts.push(widthMM.toFixed(3));
+    signatureParts.push(heightMM.toFixed(3));
+    signatureParts.push(effectivePixelsPerMM.toFixed(4));
+    signatureParts.push(String(srcWidth));
+    signatureParts.push(String(srcHeight));
+
+    var signature = signatureParts.join("|");
+
+    if (
+      !isRetry &&
+      warpState &&
+      warpState.signature === signature &&
+      warpState.warpedImageUrl
+    ) {
+      if (warpContainer) {
+        warpContainer.hidden = false;
+      }
+      clearWarpError();
+      setWarpReprojectionMessage(warpState.reprojectionError);
+      return;
+    }
+
+    if (!cvReady) {
+      if (!isRetry) {
+        pendingHomographyRequest = {
+          fourPts: ordered.map(function (point) {
+            return { x: point.x, y: point.y };
+          }),
+          paperSpec: { widthMM: widthMM, heightMM: heightMM },
+          pixelsPerMM: pixelsPerMM,
+          srcImage: srcImageElOrMat
+        };
+      }
+
+      ensureCvInitialization();
+      showWarpError("Loading computer vision engine…", Boolean(warpState));
+      return;
+    }
+
+    var srcCornersMat = null;
+    var dstCornersMat = null;
+    var homography = null;
+    var projected = null;
+    var srcMat = null;
+    var dstMat = null;
+    var inverseHomography = null;
+    var releaseSourceMat = false;
+
+    try {
+      srcCornersMat = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        ordered[0].x,
+        ordered[0].y,
+        ordered[1].x,
+        ordered[1].y,
+        ordered[2].x,
+        ordered[2].y,
+        ordered[3].x,
+        ordered[3].y
+      ]);
+      dstCornersMat = cv.matFromArray(4, 1, cv.CV_32FC2, destinationArray);
+
+      homography = cv.getPerspectiveTransform(srcCornersMat, dstCornersMat);
+      if (!homography || homography.empty()) {
+        showWarpError(
+          "Unable to compute the perspective transform.",
+          Boolean(warpState && warpState.warpedImageUrl)
+        );
+        return;
+      }
+
+      if (
+        srcImageElOrMat &&
+        typeof srcImageElOrMat.type === "number" &&
+        typeof srcImageElOrMat.rows === "number" &&
+        typeof srcImageElOrMat.cols === "number"
+      ) {
+        srcMat = srcImageElOrMat;
+      } else {
+        srcMat = cv.imread(srcImageElOrMat);
+        releaseSourceMat = true;
+      }
+
+      if (!srcMat || srcMat.empty()) {
+        showWarpError(
+          "Unable to read source pixels for warping.",
+          Boolean(warpState)
+        );
+        return;
+      }
+
+      dstMat = new cv.Mat();
+
+      if (warpCanvas) {
+        warpCanvas.width = destinationWidth;
+        warpCanvas.height = destinationHeight;
+      }
+
+      cv.warpPerspective(
+        srcMat,
+        dstMat,
+        homography,
+        new cv.Size(destinationWidth, destinationHeight),
+        cv.INTER_LINEAR,
+        cv.BORDER_CONSTANT,
+        new cv.Scalar(0, 0, 0, 0)
+      );
+
+      if (!dstMat || dstMat.empty()) {
+        showWarpError(
+          "Warping failed. Please adjust the selected corners.",
+          Boolean(warpState && warpState.warpedImageUrl)
+        );
+        return;
+      }
+
+      cv.imshow("warped-canvas", dstMat);
+
+      if (warpContainer) {
+        warpContainer.hidden = false;
+      }
+
+      projected = new cv.Mat();
+      cv.perspectiveTransform(srcCornersMat, projected, homography);
+
+      var meanError = NaN;
+      if (projected && projected.data32F && projected.data32F.length >= 8) {
+        var totalError = 0;
+        for (var errorIndex = 0; errorIndex < 4; errorIndex++) {
+          var px = projected.data32F[errorIndex * 2];
+          var py = projected.data32F[errorIndex * 2 + 1];
+          var dx = px - destinationArray[errorIndex * 2];
+          var dy = py - destinationArray[errorIndex * 2 + 1];
+          totalError += Math.sqrt(dx * dx + dy * dy);
+        }
+        meanError = totalError / 4;
+      }
+
+      clearWarpError();
+      setWarpReprojectionMessage(meanError);
+
+      var homographyData = homography.data64F
+        ? Array.from(homography.data64F)
+        : Array.from(homography.data32F);
+
+      var inverseData = null;
+      inverseHomography = new cv.Mat();
+      var invertStatus = cv.invert(
+        homography,
+        inverseHomography,
+        cv.DECOMP_SVD
+      );
+
+      if (invertStatus !== 0) {
+        inverseData = inverseHomography.data64F
+          ? Array.from(inverseHomography.data64F)
+          : Array.from(inverseHomography.data32F);
+      } else {
+        showWarpError(
+          "Computed homography is not invertible.",
+          Boolean(warpState && warpState.warpedImageUrl)
+        );
+      }
+
+      var warpedImageUrl = null;
+      if (warpCanvas) {
+        try {
+          warpedImageUrl = warpCanvas.toDataURL("image/png");
+        } catch (canvasError) {
+          warpedImageUrl = null;
+        }
+      }
+
+      warpState = {
+        homography: homographyData,
+        inverseHomography: inverseData,
+        dstWidth: destinationWidth,
+        dstHeight: destinationHeight,
+        pixelsPerMM: effectivePixelsPerMM,
+        reprojectionError: meanError,
+        warpedImageUrl: warpedImageUrl,
+        paperSpec: { widthMM: widthMM, heightMM: heightMM },
+        sourceSize: { width: srcWidth, height: srcHeight },
+        destinationCorners: destinationCorners,
+        sourceCorners: ordered.map(function (point) {
+          return { x: point.x, y: point.y };
+        }),
+        signature: signature,
+        timestamp: Date.now()
+      };
+
+      warpState.toWarped = createTransformFunction(homographyData);
+      warpState.toOriginal = inverseData
+        ? createTransformFunction(inverseData)
+        : function () {
+            return null;
+          };
+
+      lastWarpSignature = signature;
+      pendingHomographyRequest = null;
+
+      if (typeof window !== "undefined") {
+        window.gridFiniumWarp = warpState;
+      }
+    } catch (error) {
+      console.error("Homography computation failed", error);
+      showWarpError(
+        "Unable to compute the perspective transform.",
+        Boolean(warpState && warpState.warpedImageUrl)
+      );
+    } finally {
+      if (srcCornersMat) {
+        srcCornersMat.delete();
+      }
+      if (dstCornersMat) {
+        dstCornersMat.delete();
+      }
+      if (projected) {
+        projected.delete();
+      }
+      if (inverseHomography) {
+        inverseHomography.delete();
+      }
+      if (homography) {
+        homography.delete();
+      }
+      if (dstMat) {
+        dstMat.delete();
+      }
+      if (releaseSourceMat && srcMat) {
+        srcMat.delete();
+      }
+    }
   }
 
   function detectPaperBounds(image) {
@@ -1376,6 +2159,40 @@
       } else {
         metricCoverage.textContent = "--";
       }
+    }
+
+    var warpCorners = null;
+    if (calibration && calibration.corners && calibration.corners.length >= 4) {
+      warpCorners = calibration.corners;
+    } else if (
+      lastDetectedRegion &&
+      lastDetectedRegion.corners &&
+      lastDetectedRegion.corners.length >= 4
+    ) {
+      warpCorners = orderPoints(lastDetectedRegion.corners);
+    }
+
+    var warpPaperSpec = warpCorners
+      ? buildPaperSpecForWarp(warpCorners, calibration)
+      : null;
+
+    var warpPixelsPerMM =
+      calibration &&
+      typeof calibration.pxPerMm === "number" &&
+      isFinite(calibration.pxPerMm) &&
+      calibration.pxPerMm > 0
+        ? calibration.pxPerMm
+        : null;
+
+    if (warpCorners && warpCorners.length >= 4 && lastAnalyzedImage) {
+      scheduleHomographyComputation(
+        warpCorners,
+        warpPaperSpec,
+        warpPixelsPerMM,
+        lastAnalyzedImage
+      );
+    } else if (!warpState) {
+      resetWarpState();
     }
   }
 

@@ -366,6 +366,61 @@ a:hover {
   margin-top: 1.5rem;
 }
 
+.warp-preview {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.warp-preview[hidden] {
+  display: none !important;
+}
+
+.warp-preview[data-status="warning"],
+.warp-preview[data-status="error"] {
+  border-color: #b91c1c;
+}
+
+.warp-preview h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.warp-preview canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.warp-diagnostic {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.warp-diagnostic[data-status="warning"] {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.warp-error {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #b91c1c;
+}
+
+.warp-error[hidden] {
+  display: none !important;
+}
+
 .metric-label {
   color: var(--text-secondary);
 }
