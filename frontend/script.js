@@ -30,6 +30,8 @@
   var calibrationState = null;
   var themeToggle = document.getElementById("theme-toggle");
   var themeLabel = document.getElementById("theme-toggle-label");
+  var deploymentInfo = document.getElementById("deployment-info");
+  var deploymentTimestamp = document.getElementById("deployment-timestamp");
   var themeStorageKey = "gridfinium-theme";
   var themeMediaQuery =
     typeof window !== "undefined" && window.matchMedia
@@ -115,6 +117,85 @@
       storeTheme(nextTheme);
     });
   }
+
+  function fetchDeploymentTimestamp() {
+    if (
+      !deploymentTimestamp ||
+      typeof fetch !== "function" ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timeoutId = null;
+
+    if (controller && typeof window.setTimeout === "function") {
+      timeoutId = window.setTimeout(function () {
+        controller.abort();
+      }, 5000);
+    }
+
+    fetch("deployment.json", {
+      signal: controller ? controller.signal : undefined,
+      cache: "no-store",
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("Failed to load deployment info");
+        }
+        return response.json();
+      })
+      .then(function (payload) {
+        if (!payload || typeof payload.deployedAt !== "string") {
+          throw new Error("Invalid deployment payload");
+        }
+
+        var timestamp = new Date(payload.deployedAt);
+        if (isNaN(timestamp.getTime())) {
+          throw new Error("Invalid deployment timestamp");
+        }
+
+        var formatter =
+          typeof Intl !== "undefined" &&
+          Intl.DateTimeFormat &&
+          typeof Intl.DateTimeFormat === "function"
+            ? new Intl.DateTimeFormat(undefined, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })
+            : null;
+
+        var formatted = formatter
+          ? formatter.format(timestamp)
+          : timestamp.toLocaleString();
+
+        var isoTimestamp = timestamp.toISOString();
+        deploymentTimestamp.textContent = formatted;
+        deploymentTimestamp.dateTime = isoTimestamp;
+        deploymentTimestamp.setAttribute("datetime", isoTimestamp);
+
+        if (deploymentInfo) {
+          deploymentInfo.removeAttribute("data-status");
+        }
+      })
+      .catch(function () {
+        if (deploymentTimestamp) {
+          deploymentTimestamp.textContent = "Unavailable";
+          deploymentTimestamp.removeAttribute("datetime");
+        }
+        if (deploymentInfo) {
+          deploymentInfo.setAttribute("data-status", "error");
+        }
+      })
+      .finally(function () {
+        if (timeoutId && typeof window.clearTimeout === "function") {
+          window.clearTimeout(timeoutId);
+        }
+      });
+  }
+
+  fetchDeploymentTimestamp();
 
   if (previewStage) {
     var handleLabels = {
