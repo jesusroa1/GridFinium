@@ -83,6 +83,22 @@
     <p class="privacy-note">Your photo stays in the browser</p>
   </footer>
 
+  <script>
+    window.Module = window.Module || {};
+    window.Module.locateFile = function (path) {
+      if (typeof path !== "string") {
+        return path;
+      }
+      if (
+        path.endsWith(".wasm") ||
+        path.endsWith(".data") ||
+        path.endsWith(".mem")
+      ) {
+        return "https://docs.opencv.org/4.x/" + path;
+      }
+      return path;
+    };
+  </script>
   <script defer src="https://docs.opencv.org/4.x/opencv.js"></script>
   <script defer src="script.js"></script>
 </body>
