@@ -86,6 +86,14 @@ flowchart TD
 6. **Draw the outline.** A bright green contour is painted onto the canvas so you can clearly see the detected paper.
 7. **Fallback if nothing fits.** If no four-sided shape is found, the original photo is shown so you know detection failed.
 
+## Why the preview images are scaled down
+Modern phones can take photos that are thousands of pixels tall and wide. Showing that entire image inside the browser would
+force the canvas to hold all of those pixels even if the picture looks small on screen. On some devices—especially iPhones
+running Safari—pinching to zoom tells the browser to render the full-resolution canvas, which can quickly use too much memory
+and crash the page. To keep things smooth, `scripts.js` now shrinks anything bigger than about 1,280 pixels on its longest side
+before drawing it. The paper detection still uses the original high-resolution pixels, but the preview stays lightweight and
+stable when you zoom in.
+
 ## Need to change something?
 - Update `index.html` if you want to change the layout or add new sections to the page.
 - Edit `scripts.js` if you want to change how the page behaves when someone clicks or types.

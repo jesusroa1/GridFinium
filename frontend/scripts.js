@@ -7,6 +7,9 @@ const DOM_IDS = {
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
 const MAX_DISPLAY_CONTOURS = 3;
+// Keep preview canvases to a mobile-friendly size so zooming never tries to render
+// the original multi-megapixel image at full resolution.
+const MAX_DISPLAY_DIMENSION = 1280;
 
 // Grab the upload input and preview container once the page loads.
 const fileInput = document.getElementById(DOM_IDS.input);
@@ -202,14 +205,46 @@ function createStepRenderer(container) {
     wrapper.appendChild(title);
     section.appendChild(wrapper);
 
-    if (mat.type() === cv.CV_8UC1) {
-      const rgba = new cv.Mat();
-      cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
-      cv.imshow(stepCanvas, rgba);
-      rgba.delete();
-    } else {
-      cv.imshow(stepCanvas, mat);
-    }
+    renderMatOnCanvas(mat, stepCanvas);
+  };
+}
+
+function renderMatOnCanvas(mat, canvas) {
+  const { displayMat, cleanup } = buildDisplayMat(mat);
+  try {
+    cv.imshow(canvas, displayMat);
+  } finally {
+    cleanup();
+  }
+}
+
+function buildDisplayMat(mat) {
+  const owned = [];
+  let display = mat;
+
+  if (display.type() === cv.CV_8UC1) {
+    const rgba = new cv.Mat();
+    cv.cvtColor(display, rgba, cv.COLOR_GRAY2RGBA);
+    owned.push(rgba);
+    display = rgba;
+  }
+
+  const maxDimension = Math.max(display.cols, display.rows);
+  if (maxDimension > MAX_DISPLAY_DIMENSION) {
+    const scale = MAX_DISPLAY_DIMENSION / maxDimension;
+    const width = Math.max(1, Math.round(display.cols * scale));
+    const height = Math.max(1, Math.round(display.rows * scale));
+    const resized = new cv.Mat();
+    cv.resize(display, resized, new cv.Size(width, height), 0, 0, cv.INTER_AREA);
+    owned.push(resized);
+    display = resized;
+  }
+
+  return {
+    displayMat: display,
+    cleanup: () => {
+      owned.forEach((item) => item.delete());
+    },
   };
 }
 
