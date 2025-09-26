@@ -5,6 +5,8 @@ const DOM_IDS = {
 };
 
 const POLL_INTERVAL_MS = 50;
+// Only keep the top three contours so we avoid rendering dozens of shapes.
+const MAX_DISPLAY_CONTOURS = 3;
 
 // Grab the upload input and preview container once the page loads.
 const fileInput = document.getElementById(DOM_IDS.input);
@@ -267,7 +269,7 @@ function insertTopContour(list, contour, area, perimeter) {
     list.push(entry);
   }
 
-  if (list.length > 5) {
+  if (list.length > MAX_DISPLAY_CONTOURS) {
     const removed = list.pop();
     removed.mat.delete();
   }
