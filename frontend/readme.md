@@ -62,6 +62,30 @@ flowchart TD
 - **`detectPaperContour(src)`** – converts the picture to gray, finds strong edges, and keeps the largest four-sided shape it sees (the sheet of paper).
 - **`cv.drawContours(...)` inside the handler** – if a contour is found, draws a thick green outline around it before showing the final picture.
 
+## Paper outlining process
+The outline you see on the preview is created through a few clear stages. Follow the chart and steps to understand what happens after you upload a photo.
+
+```mermaid
+flowchart TD
+    A["Upload image"] --> B["Convert to grayscale"]
+    B --> C["Blur to soften noise"]
+    C --> D["Detect edges with Canny"]
+    D --> E["Find contours"]
+    E --> F{Is there a four-sided shape?}
+    F -- Yes --> G["Pick the biggest one"]
+    G --> H["Draw bright outline on canvas"]
+    F -- No --> I["Show original image without outline"]
+```
+
+### Step-by-step
+1. **Convert to grayscale.** Removing color makes it easier to spot the paper’s edges.
+2. **Blur the picture.** A gentle blur washes away tiny speckles so the outline is less wiggly.
+3. **Find edges.** The Canny algorithm traces strong transitions from dark to light, highlighting the paper border.
+4. **Search for contours.** The script gathers shapes formed by those edges.
+5. **Pick the paper.** It looks for the largest contour with four sides—this is almost always the sheet.
+6. **Draw the outline.** A bright green contour is painted onto the canvas so you can clearly see the detected paper.
+7. **Fallback if nothing fits.** If no four-sided shape is found, the original photo is shown so you know detection failed.
+
 ## Need to change something?
 - Update `index.html` if you want to change the layout or add new sections to the page.
 - Edit `scripts.js` if you want to change how the page behaves when someone clicks or types.
