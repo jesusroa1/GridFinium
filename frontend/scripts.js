@@ -4,6 +4,14 @@ const DOM_IDS = {
   preview: 'preview',
 };
 
+const TAB_DATA_ATTRIBUTE = 'data-tab-target';
+const STL_DEFAULT_DIMENSIONS = Object.freeze({
+  width: 4,
+  depth: 6,
+  height: 3,
+});
+const INCH_TO_MM = 25.4;
+
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
 const MAX_DISPLAY_CONTOURS = 3;
@@ -23,6 +31,17 @@ if (fileInput && previewContainer) {
 } else {
   console.warn('GridFinium: required DOM elements not found.');
 }
+
+setupTabs();
+initStlDesigner({
+  viewerId: 'stl-viewer',
+  widthInputId: 'stl-width',
+  depthInputId: 'stl-depth',
+  heightInputId: 'stl-height',
+  summaryId: 'stl-summary',
+  downloadButtonId: 'stl-download',
+  resetButtonId: 'stl-reset',
+});
 
 async function handleFileSelection(event) {
   // Start fresh every time a new file is chosen.
@@ -308,4 +327,336 @@ function insertTopContour(list, contour, area, perimeter) {
     const removed = list.pop();
     removed.mat.delete();
   }
+}
+
+function setupTabs() {
+  const tabButtons = Array.from(document.querySelectorAll(`button[${TAB_DATA_ATTRIBUTE}]`));
+  if (!tabButtons.length) return;
+
+  const tabPanels = Array.from(document.querySelectorAll('.tab-panel'));
+
+  tabButtons.forEach((button) => {
+    const isActive = button.classList.contains('is-active');
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+
+  tabPanels.forEach((panel) => {
+    const isActive = panel.classList.contains('is-active');
+    panel.setAttribute('aria-hidden', String(!isActive));
+  });
+
+  const activateTab = (targetId) => {
+    const targetPanel = tabPanels.find((panel) => panel.id === targetId);
+    if (!targetPanel) return;
+
+    tabButtons.forEach((button) => {
+      const isActive = button.getAttribute(TAB_DATA_ATTRIBUTE) === targetId;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', String(isActive));
+    });
+
+    tabPanels.forEach((panel) => {
+      const isActive = panel === targetPanel;
+      panel.classList.toggle('is-active', isActive);
+      panel.setAttribute('aria-hidden', String(!isActive));
+    });
+
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+  };
+
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const targetId = button.getAttribute(TAB_DATA_ATTRIBUTE);
+      if (targetId) activateTab(targetId);
+    });
+  });
+}
+
+function initStlDesigner({
+  viewerId,
+  widthInputId,
+  depthInputId,
+  heightInputId,
+  summaryId,
+  downloadButtonId,
+  resetButtonId,
+}) {
+  const viewerRoot = document.getElementById(viewerId);
+  const widthInput = document.getElementById(widthInputId);
+  const depthInput = document.getElementById(depthInputId);
+  const heightInput = document.getElementById(heightInputId);
+  const summaryNode = document.getElementById(summaryId);
+  const downloadButton = document.getElementById(downloadButtonId);
+  const resetButton = document.getElementById(resetButtonId);
+
+  if (!viewerRoot || !widthInput || !depthInput || !heightInput || !summaryNode) return null;
+  if (typeof THREE === 'undefined') {
+    viewerRoot.textContent = 'Three.js failed to load, so the 3D preview is unavailable.';
+    return null;
+  }
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  const initialWidth = viewerRoot.clientWidth || viewerRoot.offsetWidth || 480;
+  const initialHeight = viewerRoot.clientHeight || viewerRoot.offsetHeight || 320;
+  renderer.setSize(initialWidth, initialHeight);
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  viewerRoot.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(42, viewerRoot.clientWidth / viewerRoot.clientHeight, 0.1, 2000);
+  camera.position.set(12, 8, 12);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  keyLight.position.set(10, 12, 18);
+  scene.add(keyLight);
+
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.35);
+  rimLight.position.set(-8, -6, -10);
+  scene.add(rimLight);
+
+  const ground = new THREE.GridHelper(40, 10, 0xa5b4fc, 0xe0e7ff);
+  ground.position.y = -STL_DEFAULT_DIMENSIONS.height / 2;
+  scene.add(ground);
+
+  const modelGroup = new THREE.Group();
+  modelGroup.rotation.set(Math.PI / 10, Math.PI / 8, 0);
+  scene.add(modelGroup);
+
+  let activeMesh = null;
+  let currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
+
+  const ensureCameraFrame = (dimensions) => {
+    const maxDimension = Math.max(dimensions.width, dimensions.depth, dimensions.height);
+    const distance = Math.max(12, maxDimension * 3.2);
+    camera.position.set(distance, distance * 0.75, distance);
+    camera.near = Math.max(0.1, maxDimension / 20);
+    camera.far = distance * 12;
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  };
+
+  const rebuildMesh = (dimensions) => {
+    if (activeMesh) {
+      modelGroup.remove(activeMesh);
+      activeMesh.geometry.dispose();
+      activeMesh.material.dispose();
+    }
+
+    const geometry = new THREE.BoxGeometry(dimensions.width, dimensions.height, dimensions.depth);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x4f46e5,
+      metalness: 0.08,
+      roughness: 0.4,
+    });
+
+    activeMesh = new THREE.Mesh(geometry, material);
+    modelGroup.add(activeMesh);
+
+    ground.position.y = -dimensions.height / 2;
+    ensureCameraFrame(dimensions);
+  };
+
+  const updateSummary = (dimensions) => {
+    const { width, depth, height } = dimensions;
+    const format = (value) => Math.round(value * 100) / 100;
+    summaryNode.textContent = `Cube dimensions: ${format(width)}" × ${format(depth)}" × ${format(height)}".`;
+  };
+
+  const parseDimension = (input, fallback) => {
+    const value = Number.parseFloat(input.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      input.value = fallback;
+      return fallback;
+    }
+    return value;
+  };
+
+  const syncDimensions = () => {
+    currentDimensions = {
+      width: parseDimension(widthInput, currentDimensions.width),
+      depth: parseDimension(depthInput, currentDimensions.depth),
+      height: parseDimension(heightInput, currentDimensions.height),
+    };
+
+    rebuildMesh(currentDimensions);
+    updateSummary(currentDimensions);
+  };
+
+  const resetDimensions = () => {
+    widthInput.value = STL_DEFAULT_DIMENSIONS.width;
+    depthInput.value = STL_DEFAULT_DIMENSIONS.depth;
+    heightInput.value = STL_DEFAULT_DIMENSIONS.height;
+    currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
+    rebuildMesh(currentDimensions);
+    updateSummary(currentDimensions);
+  };
+
+  const handleDownload = () => {
+    const stlContent = generateBoxStl(currentDimensions);
+    const fileName = buildStlFileName(currentDimensions);
+    const blob = new Blob([stlContent], { type: 'model/stl' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const resizeRenderer = () => {
+    const { clientWidth, clientHeight } = viewerRoot;
+    if (clientWidth === 0 || clientHeight === 0) return;
+    renderer.setSize(clientWidth, clientHeight, false);
+    camera.aspect = clientWidth / clientHeight;
+    camera.updateProjectionMatrix();
+  };
+
+  const dragState = {
+    active: false,
+    pointerId: null,
+    previous: new THREE.Vector2(),
+  };
+
+  const handlePointerDown = (event) => {
+    dragState.active = true;
+    dragState.pointerId = event.pointerId;
+    dragState.previous.set(event.clientX, event.clientY);
+    renderer.domElement.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event) => {
+    if (!dragState.active || dragState.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - dragState.previous.x;
+    const deltaY = event.clientY - dragState.previous.y;
+
+    modelGroup.rotation.y += deltaX * 0.005;
+    modelGroup.rotation.x += deltaY * 0.005;
+    modelGroup.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, modelGroup.rotation.x));
+
+    dragState.previous.set(event.clientX, event.clientY);
+  };
+
+  const releasePointer = (event) => {
+    if (dragState.pointerId !== event.pointerId) return;
+    dragState.active = false;
+    dragState.pointerId = null;
+    renderer.domElement.releasePointerCapture(event.pointerId);
+  };
+
+  const handleWheel = (event) => {
+    event.preventDefault();
+    const zoomFactor = Math.exp(event.deltaY * 0.001);
+    camera.position.multiplyScalar(zoomFactor);
+  };
+
+  renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+  renderer.domElement.addEventListener('pointermove', handlePointerMove);
+  renderer.domElement.addEventListener('pointerup', releasePointer);
+  renderer.domElement.addEventListener('pointerleave', () => {
+    dragState.active = false;
+    dragState.pointerId = null;
+  });
+  renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+
+  widthInput.addEventListener('change', syncDimensions);
+  depthInput.addEventListener('change', syncDimensions);
+  heightInput.addEventListener('change', syncDimensions);
+
+  widthInput.addEventListener('input', syncDimensions);
+  depthInput.addEventListener('input', syncDimensions);
+  heightInput.addEventListener('input', syncDimensions);
+
+  if (downloadButton) {
+    downloadButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      handleDownload();
+    });
+  }
+
+  if (resetButton) {
+    resetButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      resetDimensions();
+    });
+  }
+
+  window.addEventListener('resize', resizeRenderer);
+
+  const animate = () => {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  };
+
+  resizeRenderer();
+  resetDimensions();
+  animate();
+
+  return {
+    getDimensions: () => ({ ...currentDimensions }),
+    reset: resetDimensions,
+  };
+}
+
+function generateBoxStl(dimensions) {
+  const width = dimensions.width * INCH_TO_MM;
+  const depth = dimensions.depth * INCH_TO_MM;
+  const height = dimensions.height * INCH_TO_MM;
+
+  const hx = width / 2;
+  const hy = height / 2;
+  const hz = depth / 2;
+
+  const vertices = [
+    [-hx, -hy, -hz],
+    [hx, -hy, -hz],
+    [hx, hy, -hz],
+    [-hx, hy, -hz],
+    [-hx, -hy, hz],
+    [hx, -hy, hz],
+    [hx, hy, hz],
+    [-hx, hy, hz],
+  ];
+
+  const facets = [
+    { normal: [0, 0, -1], triangles: [[0, 1, 2], [0, 2, 3]] },
+    { normal: [0, 0, 1], triangles: [[4, 5, 6], [4, 6, 7]] },
+    { normal: [0, 1, 0], triangles: [[3, 2, 6], [3, 6, 7]] },
+    { normal: [0, -1, 0], triangles: [[0, 1, 5], [0, 5, 4]] },
+    { normal: [1, 0, 0], triangles: [[1, 6, 2], [1, 5, 6]] },
+    { normal: [-1, 0, 0], triangles: [[0, 7, 3], [0, 4, 7]] },
+  ];
+
+  const lines = ['solid gridfinium_box'];
+
+  facets.forEach(({ normal, triangles }) => {
+    const normalLine = `  facet normal ${normal.map((value) => value.toFixed(6)).join(' ')}`;
+    triangles.forEach((triangle) => {
+      lines.push(normalLine, '    outer loop');
+      triangle.forEach((index) => {
+        const vertex = vertices[index];
+        lines.push(`      vertex ${vertex.map((value) => value.toFixed(6)).join(' ')}`);
+      });
+      lines.push('    endloop', '  endfacet');
+    });
+  });
+
+  lines.push('endsolid gridfinium_box');
+  return `${lines.join('\n')}\n`;
+}
+
+function buildStlFileName(dimensions) {
+  const parts = [dimensions.width, dimensions.depth, dimensions.height].map((value) => {
+    const rounded = Math.round(value * 100) / 100;
+    return String(rounded).replace(/\./g, '_');
+  });
+  return `gridfinium-box-${parts.join('x')}.stl`;
 }
