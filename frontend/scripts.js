@@ -1050,36 +1050,68 @@ function configureStlControls({
 }) {
   let currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
 
-  const parseDimension = (input, fallback) => {
-    const value = Number.parseFloat(input.value);
-    if (!Number.isFinite(value) || value <= 0) {
-      input.value = fallback;
-      return fallback;
-    }
-    return value;
+  const formatDimensionValue = (value) => {
+    const normalized = Math.round(value * 1000) / 1000;
+    return Number.isFinite(normalized) ? normalized.toString() : '';
   };
 
-  const applyDimensions = (dimensions) => {
+  const applyDimensions = (dimensions, { commitInputs = false } = {}) => {
     currentDimensions = { ...dimensions };
+
+    if (commitInputs) {
+      widthInput.value = formatDimensionValue(currentDimensions.width);
+      depthInput.value = formatDimensionValue(currentDimensions.depth);
+      heightInput.value = formatDimensionValue(currentDimensions.height);
+    }
+
     updateStlSummary(summaryNode, currentDimensions);
     if (typeof onChange === 'function') {
       onChange({ ...currentDimensions });
     }
   };
 
-  const syncDimensions = () => {
-    applyDimensions({
-      width: parseDimension(widthInput, currentDimensions.width),
-      depth: parseDimension(depthInput, currentDimensions.depth),
-      height: parseDimension(heightInput, currentDimensions.height),
-    });
+  const readDimension = (input) => {
+    const value = Number.parseFloat(input.value);
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return value;
+  };
+
+  const handleLiveInput = () => {
+    const next = { ...currentDimensions };
+    let hasChange = false;
+
+    const width = readDimension(widthInput);
+    if (width !== null && width !== next.width) {
+      next.width = width;
+      hasChange = true;
+    }
+
+    const depth = readDimension(depthInput);
+    if (depth !== null && depth !== next.depth) {
+      next.depth = depth;
+      hasChange = true;
+    }
+
+    const height = readDimension(heightInput);
+    if (height !== null && height !== next.height) {
+      next.height = height;
+      hasChange = true;
+    }
+
+    if (hasChange) {
+      applyDimensions(next);
+    }
+  };
+
+  const commitDimensions = () => {
+    const width = readDimension(widthInput) ?? currentDimensions.width;
+    const depth = readDimension(depthInput) ?? currentDimensions.depth;
+    const height = readDimension(heightInput) ?? currentDimensions.height;
+    applyDimensions({ width, depth, height }, { commitInputs: true });
   };
 
   const resetDimensions = () => {
-    widthInput.value = STL_DEFAULT_DIMENSIONS.width;
-    depthInput.value = STL_DEFAULT_DIMENSIONS.depth;
-    heightInput.value = STL_DEFAULT_DIMENSIONS.height;
-    applyDimensions({ ...STL_DEFAULT_DIMENSIONS });
+    applyDimensions({ ...STL_DEFAULT_DIMENSIONS }, { commitInputs: true });
   };
 
   const handleDownload = () => {
@@ -1096,13 +1128,13 @@ function configureStlControls({
     URL.revokeObjectURL(url);
   };
 
-  widthInput.addEventListener('change', syncDimensions);
-  depthInput.addEventListener('change', syncDimensions);
-  heightInput.addEventListener('change', syncDimensions);
+  widthInput.addEventListener('input', handleLiveInput);
+  depthInput.addEventListener('input', handleLiveInput);
+  heightInput.addEventListener('input', handleLiveInput);
 
-  widthInput.addEventListener('input', syncDimensions);
-  depthInput.addEventListener('input', syncDimensions);
-  heightInput.addEventListener('input', syncDimensions);
+  widthInput.addEventListener('change', commitDimensions);
+  depthInput.addEventListener('change', commitDimensions);
+  heightInput.addEventListener('change', commitDimensions);
 
   if (downloadButton) {
     downloadButton.addEventListener('click', (event) => {
@@ -1130,7 +1162,7 @@ function updateStlSummary(summaryNode, dimensions) {
   if (!summaryNode) return;
   const { width, depth, height } = dimensions;
   const format = (value) => Math.round(value * 100) / 100;
-  summaryNode.textContent = `Cube dimensions: ${format(width)}" × ${format(depth)}" × ${format(height)}".`;
+  summaryNode.textContent = `Box dimensions: ${format(width)}" × ${format(depth)}" × ${format(height)}".`;
 }
 
 function buildBoxVertices(dimensions, scale) {
