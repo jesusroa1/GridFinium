@@ -305,9 +305,9 @@ function detectPaperContour(src, showStep) {
   cv.dilate(edges, edges, kernel);
   showStep('Dilated Edges - cv.dilate()', edges, 'step-edges-dilated');
   // Step 1d-ii: shrink (erode) them back down so the line is narrow again.
-  cv.erode(edges, edges, kernel);
+  // cv.erode(edges, edges, kernel);
   kernel.delete();
-  showStep('Cleaned Edges - cv.erode()', edges, 'step-edges-cleaned');
+  // showStep('Cleaned Edges - cv.erode()', edges, 'step-edges-cleaned');
 
   // Step 2: collect every outline the algorithm discovers.
   cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
