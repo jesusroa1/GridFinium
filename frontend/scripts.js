@@ -476,15 +476,22 @@ function initStlDesigner({
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
-  const initialWidth = viewerRoot.clientWidth || viewerRoot.offsetWidth || 480;
-  const initialHeight = viewerRoot.clientHeight || viewerRoot.offsetHeight || 320;
+  const initialWidth = Math.max(
+    1,
+    viewerRoot.clientWidth || viewerRoot.offsetWidth || viewerRoot.scrollWidth || 480,
+  );
+  const initialHeight = Math.max(
+    1,
+    viewerRoot.clientHeight || viewerRoot.offsetHeight || viewerRoot.scrollHeight || 320,
+  );
+  const initialAspect = initialWidth / initialHeight;
   renderer.setSize(initialWidth, initialHeight);
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
   viewerRoot.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(42, viewerRoot.clientWidth / viewerRoot.clientHeight, 0.1, 2000);
+  const camera = new THREE.PerspectiveCamera(42, initialAspect, 0.1, 2000);
   camera.position.set(12, 8, 12);
   camera.lookAt(0, 0, 0);
 
