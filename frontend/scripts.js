@@ -346,6 +346,7 @@ function detectPaperContour(src, showStep) {
 
 function createStepRenderer(container) {
   ensureProcessingStyles();
+
   const section = document.createElement('section');
   section.className = 'processing-steps';
 
@@ -359,8 +360,7 @@ function createStepRenderer(container) {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'processing-steps__toggle';
-  toggle.textContent = 'Show details';
-  toggle.setAttribute('aria-expanded', 'false');
+  toggle.textContent = 'Hide details';
 
   header.appendChild(title);
   header.appendChild(toggle);
@@ -368,16 +368,27 @@ function createStepRenderer(container) {
 
   const list = document.createElement('div');
   list.className = 'processing-steps__list';
-  list.hidden = true;
   section.appendChild(list);
 
   container.appendChild(section);
 
-  let expanded = false;
+  let expanded = true;
+
+  const syncListStyles = () => {
+    list.dataset.expanded = expanded ? 'true' : 'false';
+    list.setAttribute('aria-hidden', String(!expanded));
+
+    if (expanded) {
+      list.style.maxHeight = `${list.scrollHeight}px`;
+    } else {
+      list.style.maxHeight = '0px';
+    }
+  };
+
   const syncToggleState = () => {
     toggle.setAttribute('aria-expanded', String(expanded));
     toggle.textContent = expanded ? 'Hide details' : 'Show details';
-    list.hidden = !expanded;
+    syncListStyles();
   };
 
   toggle.addEventListener('click', () => {
@@ -394,7 +405,6 @@ function createStepRenderer(container) {
 
     const canvas = document.createElement('canvas');
     canvas.className = 'processing-canvas';
-    if (modifier) canvas.classList.add(`${modifier}__canvas`);
 
     const caption = document.createElement('figcaption');
     caption.textContent = label;
@@ -404,6 +414,11 @@ function createStepRenderer(container) {
     list.appendChild(wrapper);
 
     renderMatOnCanvas(mat, canvas);
+
+    if (expanded) {
+      // Keep the transition smooth as new steps are added.
+      requestAnimationFrame(syncListStyles);
+    }
   };
 }
 
@@ -486,13 +501,13 @@ function ensureProcessingStyles() {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 12px;
-      padding: 16px;
+      padding: 0 16px;
       max-height: 0;
       overflow: hidden;
-      transition: max-height 0.3s ease;
+      transition: max-height 0.3s ease, padding 0.2s ease;
     }
     .processing-steps__list[data-expanded="true"] {
-      max-height: 1200px;
+      padding: 16px;
     }
     .processing-step {
       display: flex;
