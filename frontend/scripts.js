@@ -394,7 +394,7 @@ function createStepRenderer(container) {
 
     const canvas = document.createElement('canvas');
     canvas.className = 'processing-canvas';
-    if (modifier) canvas.classList.add(${modifier}__canvas);
+    if (modifier) canvas.classList.add(`${modifier}__canvas`);
 
     const caption = document.createElement('figcaption');
     caption.textContent = label;
@@ -407,7 +407,7 @@ function createStepRenderer(container) {
   };
 }
 
-function renderMatOnCanvas(mat, canvas)(mat, canvas) {
+function renderMatOnCanvas(mat, canvas) {
   const { displayMat, cleanup } = buildDisplayMat(mat);
   try {
     cv.imshow(canvas, displayMat);
