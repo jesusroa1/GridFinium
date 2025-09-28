@@ -15,6 +15,7 @@ const THREE_CDN_SOURCES = Object.freeze([
   'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js',
   'https://unpkg.com/three@0.161.0/build/three.min.js',
 ]);
+let threeLoaderPromise = null;
 
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
@@ -37,24 +38,24 @@ if (fileInput && previewContainer) {
 }
 
 setupTabs();
+
+const stlDesignerOptions = {
+  viewerId: 'stl-viewer',
+  widthInputId: 'stl-width',
+  depthInputId: 'stl-depth',
+  heightInputId: 'stl-height',
+  summaryId: 'stl-summary',
+  downloadButtonId: 'stl-download',
+  resetButtonId: 'stl-reset',
+};
+
 ensureThreeJs()
   .then(() => {
-    initStlDesigner({
-      viewerId: 'stl-viewer',
-      widthInputId: 'stl-width',
-      depthInputId: 'stl-depth',
-      heightInputId: 'stl-height',
-      summaryId: 'stl-summary',
-      downloadButtonId: 'stl-download',
-      resetButtonId: 'stl-reset',
-    });
+    initStlDesigner(stlDesignerOptions);
   })
   .catch((error) => {
-    const viewerRoot = document.getElementById('stl-viewer');
-    if (viewerRoot) {
-      viewerRoot.textContent = 'Three.js failed to load, so the 3D preview is unavailable.';
-    }
-    console.error('GridFinium: unable to load Three.js.', error);
+    console.error('GridFinium: unable to load Three.js from any CDN source. Falling back to canvas renderer.', error);
+    initStlDesigner(stlDesignerOptions);
   });
 
 async function handleFileSelection(event) {
@@ -131,8 +132,6 @@ function waitForOpenCv() {
   });
 }
 
-let threeLoaderPromise = null;
-
 function ensureThreeJs() {
   if (typeof THREE !== 'undefined') return Promise.resolve();
   if (threeLoaderPromise) return threeLoaderPromise;
@@ -192,6 +191,14 @@ function ensureThreeJs() {
   );
 
   return threeLoaderPromise;
+}
+
+function initStlDesigner(options) {
+  if (typeof THREE !== 'undefined') {
+    return initThreeStlDesigner(options);
+  }
+
+  return initCanvasStlDesigner(options);
 }
 
 function detectPaperContour(src, showStep) {
@@ -451,7 +458,7 @@ function setupTabs() {
   });
 }
 
-function initStlDesigner({
+function initThreeStlDesigner({
   viewerId,
   widthInputId,
   depthInputId,
@@ -488,6 +495,8 @@ function initStlDesigner({
   renderer.setSize(initialWidth, initialHeight);
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
+  renderer.domElement.style.cursor = 'grab';
+  renderer.domElement.style.touchAction = 'none';
   viewerRoot.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -514,7 +523,6 @@ function initStlDesigner({
   scene.add(modelGroup);
 
   let activeMesh = null;
-  let currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
 
   const ensureCameraFrame = (dimensions) => {
     const maxDimension = Math.max(dimensions.width, dimensions.depth, dimensions.height);
@@ -547,55 +555,6 @@ function initStlDesigner({
     ensureCameraFrame(dimensions);
   };
 
-  const updateSummary = (dimensions) => {
-    const { width, depth, height } = dimensions;
-    const format = (value) => Math.round(value * 100) / 100;
-    summaryNode.textContent = `Cube dimensions: ${format(width)}" × ${format(depth)}" × ${format(height)}".`;
-  };
-
-  const parseDimension = (input, fallback) => {
-    const value = Number.parseFloat(input.value);
-    if (!Number.isFinite(value) || value <= 0) {
-      input.value = fallback;
-      return fallback;
-    }
-    return value;
-  };
-
-  const syncDimensions = () => {
-    currentDimensions = {
-      width: parseDimension(widthInput, currentDimensions.width),
-      depth: parseDimension(depthInput, currentDimensions.depth),
-      height: parseDimension(heightInput, currentDimensions.height),
-    };
-
-    rebuildMesh(currentDimensions);
-    updateSummary(currentDimensions);
-  };
-
-  const resetDimensions = () => {
-    widthInput.value = STL_DEFAULT_DIMENSIONS.width;
-    depthInput.value = STL_DEFAULT_DIMENSIONS.depth;
-    heightInput.value = STL_DEFAULT_DIMENSIONS.height;
-    currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
-    rebuildMesh(currentDimensions);
-    updateSummary(currentDimensions);
-  };
-
-  const handleDownload = () => {
-    const stlContent = generateBoxStl(currentDimensions);
-    const fileName = buildStlFileName(currentDimensions);
-    const blob = new Blob([stlContent], { type: 'model/stl' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   const resizeRenderer = () => {
     const { clientWidth, clientHeight } = viewerRoot;
     if (clientWidth === 0 || clientHeight === 0) return;
@@ -615,6 +574,7 @@ function initStlDesigner({
     dragState.pointerId = event.pointerId;
     dragState.previous.set(event.clientX, event.clientY);
     renderer.domElement.setPointerCapture(event.pointerId);
+    renderer.domElement.style.cursor = 'grabbing';
   };
 
   const handlePointerMove = (event) => {
@@ -634,6 +594,7 @@ function initStlDesigner({
     dragState.active = false;
     dragState.pointerId = null;
     renderer.domElement.releasePointerCapture(event.pointerId);
+    renderer.domElement.style.cursor = 'grab';
   };
 
   const handleWheel = (event) => {
@@ -645,11 +606,343 @@ function initStlDesigner({
   renderer.domElement.addEventListener('pointerdown', handlePointerDown);
   renderer.domElement.addEventListener('pointermove', handlePointerMove);
   renderer.domElement.addEventListener('pointerup', releasePointer);
+  renderer.domElement.addEventListener('pointercancel', releasePointer);
   renderer.domElement.addEventListener('pointerleave', () => {
     dragState.active = false;
     dragState.pointerId = null;
+    renderer.domElement.style.cursor = 'grab';
   });
   renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+  window.addEventListener('resize', resizeRenderer);
+
+  const controls = configureStlControls({
+    widthInput,
+    depthInput,
+    heightInput,
+    summaryNode,
+    downloadButton,
+    resetButton,
+    onChange: (dimensions) => {
+      rebuildMesh(dimensions);
+    },
+  });
+
+  resizeRenderer();
+
+  const animate = () => {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  };
+
+  animate();
+
+  return {
+    getDimensions: () => controls.getDimensions(),
+    reset: () => controls.reset(),
+  };
+}
+
+function initCanvasStlDesigner({
+  viewerId,
+  widthInputId,
+  depthInputId,
+  heightInputId,
+  summaryId,
+  downloadButtonId,
+  resetButtonId,
+}) {
+  const viewerRoot = document.getElementById(viewerId);
+  const widthInput = document.getElementById(widthInputId);
+  const depthInput = document.getElementById(depthInputId);
+  const heightInput = document.getElementById(heightInputId);
+  const summaryNode = document.getElementById(summaryId);
+  const downloadButton = document.getElementById(downloadButtonId);
+  const resetButton = document.getElementById(resetButtonId);
+
+  if (!viewerRoot || !widthInput || !depthInput || !heightInput || !summaryNode) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.display = 'block';
+  canvas.style.touchAction = 'none';
+  canvas.classList.add('stl-viewer__canvas');
+
+  viewerRoot.replaceChildren(canvas);
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    viewerRoot.textContent = 'Your browser does not support the canvas 3D preview.';
+    return null;
+  }
+
+  const faces = [
+    [0, 1, 2, 3],
+    [4, 5, 6, 7],
+    [3, 2, 6, 7],
+    [0, 1, 5, 4],
+    [1, 2, 6, 5],
+    [0, 3, 7, 4],
+  ];
+
+  const edges = [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4],
+    [0, 4],
+    [1, 5],
+    [2, 6],
+    [3, 7],
+  ];
+
+  const lightDirection = normalizeVector({ x: 0.6, y: 0.85, z: 1 });
+  const state = {
+    rotationX: Math.PI / 10,
+    rotationY: Math.PI / 8,
+    zoom: 1,
+  };
+
+  const displaySize = {
+    width: Math.max(1, viewerRoot.clientWidth || viewerRoot.offsetWidth || viewerRoot.scrollWidth || 480),
+    height: Math.max(1, viewerRoot.clientHeight || viewerRoot.offsetHeight || viewerRoot.scrollHeight || 320),
+    dpr: window.devicePixelRatio || 1,
+  };
+
+  let latestDimensions = { ...STL_DEFAULT_DIMENSIONS };
+  let pendingFrame = null;
+
+  const ensureCanvasSize = () => {
+    displaySize.width = Math.max(
+      1,
+      viewerRoot.clientWidth || viewerRoot.offsetWidth || viewerRoot.scrollWidth || displaySize.width,
+    );
+    displaySize.height = Math.max(
+      1,
+      viewerRoot.clientHeight || viewerRoot.offsetHeight || viewerRoot.scrollHeight || displaySize.height,
+    );
+    displaySize.dpr = window.devicePixelRatio || 1;
+
+    canvas.width = Math.max(1, Math.round(displaySize.width * displaySize.dpr));
+    canvas.height = Math.max(1, Math.round(displaySize.height * displaySize.dpr));
+    canvas.style.width = `${displaySize.width}px`;
+    canvas.style.height = `${displaySize.height}px`;
+
+    scheduleRender();
+  };
+
+  const scheduleRender = () => {
+    if (pendingFrame) return;
+    pendingFrame = window.requestAnimationFrame(() => {
+      pendingFrame = null;
+      render();
+    });
+  };
+
+  const render = () => {
+    const width = displaySize.width;
+    const height = displaySize.height;
+    if (width === 0 || height === 0) return;
+
+    context.setTransform(displaySize.dpr, 0, 0, displaySize.dpr, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    const gradient = context.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#eef2ff');
+    gradient.addColorStop(1, '#e2e8f0');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, width, height);
+
+    const dims = latestDimensions;
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const maxDimension = Math.max(dims.width, dims.height, dims.depth);
+    const minCanvasSize = Math.min(width, height);
+    const scale = (minCanvasSize * 0.5) / (maxDimension || 1);
+    const baseDistance = (maxDimension || 1) * scale * 3.2;
+    const distance = baseDistance / state.zoom;
+    const focalLength = distance;
+
+    const baseVertices = buildBoxVertices(dims, scale);
+    const rotatedVertices = baseVertices.map((vertex) => rotateVertex(vertex, state.rotationX, state.rotationY));
+    const projectedVertices = rotatedVertices.map((vertex) => projectVertex(vertex, halfWidth, halfHeight, distance, focalLength));
+
+    drawShadow(context, dims, maxDimension, minCanvasSize, halfWidth, halfHeight);
+
+    const visibleFaces = faces
+      .map((indices) => buildFaceData(indices, rotatedVertices, projectedVertices, distance))
+      .filter((face) => face && face.viewDot < 0)
+      .map((face) => ({
+        ...face,
+        fill: shadeColor({ r: 79, g: 70, b: 229 }, lightDirection, face.normal),
+      }));
+
+    visibleFaces.sort((a, b) => b.averageDepth - a.averageDepth);
+
+    visibleFaces.forEach((face) => {
+      context.beginPath();
+      face.projected.forEach((point, index) => {
+        if (index === 0) {
+          context.moveTo(point.x, point.y);
+        } else {
+          context.lineTo(point.x, point.y);
+        }
+      });
+      context.closePath();
+      context.fillStyle = face.fill;
+      context.fill();
+    });
+
+    context.beginPath();
+    edges.forEach(([startIndex, endIndex]) => {
+      const start = projectedVertices[startIndex];
+      const end = projectedVertices[endIndex];
+      context.moveTo(start.x, start.y);
+      context.lineTo(end.x, end.y);
+    });
+    context.lineWidth = 1.2;
+    context.strokeStyle = 'rgba(30, 41, 59, 0.35)';
+    context.stroke();
+  };
+
+  const dragState = {
+    active: false,
+    pointerId: null,
+    previous: { x: 0, y: 0 },
+  };
+
+  canvas.addEventListener('pointerdown', (event) => {
+    dragState.active = true;
+    dragState.pointerId = event.pointerId;
+    dragState.previous.x = event.clientX;
+    dragState.previous.y = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!dragState.active || dragState.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - dragState.previous.x;
+    const deltaY = event.clientY - dragState.previous.y;
+    dragState.previous.x = event.clientX;
+    dragState.previous.y = event.clientY;
+
+    state.rotationY += deltaX * 0.005;
+    state.rotationX += deltaY * 0.005;
+    state.rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, state.rotationX));
+
+    scheduleRender();
+  });
+
+  const releasePointer = (event) => {
+    if (dragState.pointerId !== event.pointerId) return;
+    dragState.active = false;
+    dragState.pointerId = null;
+    canvas.releasePointerCapture(event.pointerId);
+    canvas.style.cursor = 'grab';
+  };
+
+  canvas.addEventListener('pointerup', releasePointer);
+  canvas.addEventListener('pointercancel', releasePointer);
+  canvas.addEventListener('pointerleave', () => {
+    dragState.active = false;
+    dragState.pointerId = null;
+    canvas.style.cursor = 'grab';
+  });
+
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      event.preventDefault();
+      const zoomFactor = Math.exp(event.deltaY * 0.001);
+      state.zoom = Math.min(3, Math.max(0.4, state.zoom / zoomFactor));
+      scheduleRender();
+    },
+    { passive: false },
+  );
+
+  const controls = configureStlControls({
+    widthInput,
+    depthInput,
+    heightInput,
+    summaryNode,
+    downloadButton,
+    resetButton,
+    onChange: (dimensions) => {
+      latestDimensions = { ...dimensions };
+      scheduleRender();
+    },
+  });
+
+  window.addEventListener('resize', ensureCanvasSize);
+  ensureCanvasSize();
+
+  return {
+    getDimensions: () => controls.getDimensions(),
+    reset: () => controls.reset(),
+  };
+}
+
+function configureStlControls({
+  widthInput,
+  depthInput,
+  heightInput,
+  summaryNode,
+  downloadButton,
+  resetButton,
+  onChange,
+}) {
+  let currentDimensions = { ...STL_DEFAULT_DIMENSIONS };
+
+  const parseDimension = (input, fallback) => {
+    const value = Number.parseFloat(input.value);
+    if (!Number.isFinite(value) || value <= 0) {
+      input.value = fallback;
+      return fallback;
+    }
+    return value;
+  };
+
+  const applyDimensions = (dimensions) => {
+    currentDimensions = { ...dimensions };
+    updateStlSummary(summaryNode, currentDimensions);
+    if (typeof onChange === 'function') {
+      onChange({ ...currentDimensions });
+    }
+  };
+
+  const syncDimensions = () => {
+    applyDimensions({
+      width: parseDimension(widthInput, currentDimensions.width),
+      depth: parseDimension(depthInput, currentDimensions.depth),
+      height: parseDimension(heightInput, currentDimensions.height),
+    });
+  };
+
+  const resetDimensions = () => {
+    widthInput.value = STL_DEFAULT_DIMENSIONS.width;
+    depthInput.value = STL_DEFAULT_DIMENSIONS.depth;
+    heightInput.value = STL_DEFAULT_DIMENSIONS.height;
+    applyDimensions({ ...STL_DEFAULT_DIMENSIONS });
+  };
+
+  const handleDownload = () => {
+    const stlContent = generateBoxStl(currentDimensions);
+    const fileName = buildStlFileName(currentDimensions);
+    const blob = new Blob([stlContent], { type: 'model/stl' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   widthInput.addEventListener('change', syncDimensions);
   depthInput.addEventListener('change', syncDimensions);
@@ -673,21 +966,170 @@ function initStlDesigner({
     });
   }
 
-  window.addEventListener('resize', resizeRenderer);
-
-  const animate = () => {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-  };
-
-  resizeRenderer();
   resetDimensions();
-  animate();
 
   return {
     getDimensions: () => ({ ...currentDimensions }),
     reset: resetDimensions,
   };
+}
+
+function updateStlSummary(summaryNode, dimensions) {
+  if (!summaryNode) return;
+  const { width, depth, height } = dimensions;
+  const format = (value) => Math.round(value * 100) / 100;
+  summaryNode.textContent = `Cube dimensions: ${format(width)}" × ${format(depth)}" × ${format(height)}".`;
+}
+
+function buildBoxVertices(dimensions, scale) {
+  const hx = ((dimensions.width || 0) * scale) / 2;
+  const hy = ((dimensions.height || 0) * scale) / 2;
+  const hz = ((dimensions.depth || 0) * scale) / 2;
+
+  return [
+    { x: -hx, y: -hy, z: -hz },
+    { x: hx, y: -hy, z: -hz },
+    { x: hx, y: hy, z: -hz },
+    { x: -hx, y: hy, z: -hz },
+    { x: -hx, y: -hy, z: hz },
+    { x: hx, y: -hy, z: hz },
+    { x: hx, y: hy, z: hz },
+    { x: -hx, y: hy, z: hz },
+  ];
+}
+
+function rotateVertex(vertex, rotationX, rotationY) {
+  const cosY = Math.cos(rotationY);
+  const sinY = Math.sin(rotationY);
+  const cosX = Math.cos(rotationX);
+  const sinX = Math.sin(rotationX);
+
+  const x1 = vertex.x * cosY - vertex.z * sinY;
+  const z1 = vertex.x * sinY + vertex.z * cosY;
+  const y1 = vertex.y * cosX - z1 * sinX;
+  const z2 = vertex.y * sinX + z1 * cosX;
+
+  return { x: x1, y: y1, z: z2 };
+}
+
+function projectVertex(vertex, halfWidth, halfHeight, distance, focalLength) {
+  const z = vertex.z + distance;
+  const perspective = focalLength / (z || 1);
+
+  return {
+    x: halfWidth + vertex.x * perspective,
+    y: halfHeight - vertex.y * perspective,
+    depth: z,
+  };
+}
+
+function drawShadow(context, dimensions, maxDimension, minCanvasSize, centerX, centerY) {
+  const safeMax = maxDimension || 1;
+  const scaleWidth = (dimensions.width / safeMax) * minCanvasSize * 0.28;
+  const scaleDepth = (dimensions.depth / safeMax) * minCanvasSize * 0.22;
+  const offsetY = (dimensions.height / safeMax) * minCanvasSize * 0.14;
+
+  context.save();
+  context.fillStyle = 'rgba(15, 23, 42, 0.12)';
+  context.beginPath();
+  context.ellipse(
+    centerX,
+    centerY + offsetY,
+    Math.max(12, scaleWidth),
+    Math.max(8, scaleDepth),
+    0,
+    0,
+    Math.PI * 2,
+  );
+  context.fill();
+  context.restore();
+}
+
+function buildFaceData(indices, rotatedVertices, projectedVertices, cameraDistance) {
+  const rotated = indices.map((index) => rotatedVertices[index]);
+  const projected = indices.map((index) => projectedVertices[index]);
+
+  const edgeA = subtractVector(rotated[1], rotated[0]);
+  const edgeB = subtractVector(rotated[2], rotated[0]);
+  const normal = crossVector(edgeA, edgeB);
+  const normalLength = Math.hypot(normal.x, normal.y, normal.z);
+  if (!normalLength) return null;
+  const unitNormal = {
+    x: normal.x / normalLength,
+    y: normal.y / normalLength,
+    z: normal.z / normalLength,
+  };
+
+  const center = rotated.reduce(
+    (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y, z: acc.z + point.z }),
+    { x: 0, y: 0, z: 0 },
+  );
+  center.x /= rotated.length;
+  center.y /= rotated.length;
+  center.z /= rotated.length;
+
+  const centerCamera = {
+    x: center.x,
+    y: center.y,
+    z: center.z + cameraDistance,
+  };
+
+  const toCamera = {
+    x: -centerCamera.x,
+    y: -centerCamera.y,
+    z: -centerCamera.z,
+  };
+  const toCameraLength = Math.hypot(toCamera.x, toCamera.y, toCamera.z) || 1;
+  const unitToCamera = {
+    x: toCamera.x / toCameraLength,
+    y: toCamera.y / toCameraLength,
+    z: toCamera.z / toCameraLength,
+  };
+
+  const averageDepth = projected.reduce((sum, point) => sum + point.depth, 0) / projected.length;
+
+  return {
+    normal: unitNormal,
+    projected,
+    averageDepth,
+    viewDot: dotVector(unitNormal, unitToCamera),
+  };
+}
+
+function shadeColor(baseColor, lightDirection, normal) {
+  const dot = Math.max(0, dotVector(lightDirection, normal));
+  const intensity = 0.35 + 0.65 * dot;
+
+  const r = Math.round(Math.min(255, baseColor.r * intensity));
+  const g = Math.round(Math.min(255, baseColor.g * intensity));
+  const b = Math.round(Math.min(255, baseColor.b * intensity));
+
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function normalizeVector(vector) {
+  const length = Math.hypot(vector.x, vector.y, vector.z) || 1;
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+    z: vector.z / length,
+  };
+}
+
+function subtractVector(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+}
+
+function crossVector(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+function dotVector(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 function generateBoxStl(dimensions) {
