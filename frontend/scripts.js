@@ -4,6 +4,8 @@ const DOM_IDS = {
   preview: 'preview',
 };
 
+const DEFAULT_IMAGE_PATH = 'example_coaster.jpeg';
+
 const TAB_DATA_ATTRIBUTE = 'data-tab-target';
 const STL_DEFAULT_DIMENSIONS = Object.freeze({
   width: 4,
@@ -28,10 +30,12 @@ const fileInput = document.getElementById(DOM_IDS.input);
 const previewContainer = document.getElementById(DOM_IDS.preview);
 // Start preparing OpenCV right away so we can await it later.
 const cvReady = waitForOpenCv();
+let activePreviewToken = 0;
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
   fileInput.addEventListener('change', handleFileSelection);
+  loadDefaultPreview(DEFAULT_IMAGE_PATH);
 } else {
   console.warn('GridFinium: required DOM elements not found.');
 }
@@ -58,26 +62,49 @@ ensureThreeJs()
   });
 
 async function handleFileSelection(event) {
-  // Start fresh every time a new file is chosen.
-  previewContainer.replaceChildren();
-
   const file = event.target?.files?.[0];
   if (!file) return;
 
-  // Build the <img> object that will hold this upload for OpenCV to read.
-  const imageElement = new Image();
   const objectUrl = URL.createObjectURL(file);
-  const renderStep = createStepRenderer(previewContainer);
 
   try {
-    await loadImage(imageElement, objectUrl);
+    await processImageFromSource(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
 
-    await cvReady;
+async function processImageFromSource(imageSrc) {
+  if (!previewContainer) return;
 
-    // Step 0: load the raw pixels from the image into an OpenCV matrix.
-    const src = cv.imread(imageElement);
+  const sessionId = ++activePreviewToken;
+
+  previewContainer.replaceChildren();
+
+  const { heading: resultHeading, canvas: resultCanvas } = createPreviewResultSection(previewContainer);
+
+  const imageElement = new Image();
+  const appendStep = createStepRenderer(previewContainer);
+  const renderStep = (label, mat, modifier) => {
+    if (sessionId !== activePreviewToken) return;
+    if (modifier === 'step-outlined') {
+      resultHeading.textContent = label;
+      renderMatOnCanvas(mat, resultCanvas);
+      if (sessionId !== activePreviewToken) return;
+    }
+    appendStep(label, mat, modifier);
+  };
+
+  await loadImage(imageElement, imageSrc);
+  if (sessionId !== activePreviewToken) return;
+
+  await cvReady;
+  if (sessionId !== activePreviewToken) return;
+
+  const src = cv.imread(imageElement);
+  try {
     renderStep('Original Photo', src, 'step-original');
-    // Step 1+: run the paper detection routine and log each transformation.
+
     const paperContour = detectPaperContour(src, renderStep);
 
     if (paperContour) {
@@ -89,11 +116,39 @@ async function handleFileSelection(event) {
     }
 
     renderStep('Outlined Paper', src, 'step-outlined');
-    src.delete();
   } finally {
-    // Free the temporary blob URL created for this upload.
-    URL.revokeObjectURL(objectUrl);
+    src.delete();
   }
+}
+
+function createPreviewResultSection(container) {
+  ensureProcessingStyles();
+
+  const section = document.createElement('section');
+  section.className = 'preview-result';
+
+  const heading = document.createElement('h3');
+  heading.className = 'preview-result__heading';
+  heading.textContent = 'Detected Outline';
+
+  const canvasWrapper = document.createElement('div');
+  canvasWrapper.className = 'preview-result__canvas-wrapper';
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'preview-result__canvas';
+
+  canvasWrapper.appendChild(canvas);
+  section.appendChild(heading);
+  section.appendChild(canvasWrapper);
+  container.appendChild(section);
+
+  return { heading, canvas };
+}
+
+function loadDefaultPreview(imageSrc) {
+  processImageFromSource(imageSrc).catch((error) => {
+    console.error('GridFinium: failed to load default preview image.', error);
+  });
 }
 
 function loadImage(imageElement, src) {
@@ -286,26 +341,66 @@ function createStepRenderer(container) {
   ensureProcessingStyles();
   const section = document.createElement('section');
   section.className = 'processing-steps';
+
+  const header = document.createElement('div');
+  header.className = 'processing-steps__header';
+
+  const title = document.createElement('h3');
+  title.className = 'processing-steps__title';
+  title.textContent = 'Processing Steps';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'processing-steps__toggle';
+  toggle.textContent = 'Show details';
+  toggle.setAttribute('aria-expanded', 'false');
+
+  header.appendChild(title);
+  header.appendChild(toggle);
+  section.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'processing-steps__list';
+  list.hidden = true;
+  section.appendChild(list);
+
   container.appendChild(section);
+
+  let expanded = false;
+  const syncToggleState = () => {
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? 'Hide details' : 'Show details';
+    list.hidden = !expanded;
+  };
+
+  toggle.addEventListener('click', () => {
+    expanded = !expanded;
+    syncToggleState();
+  });
+
+  syncToggleState();
 
   return (label, mat, modifier) => {
     const wrapper = document.createElement('figure');
     wrapper.className = 'processing-step';
     if (modifier) wrapper.classList.add(modifier);
-    const title = document.createElement('figcaption');
-    title.textContent = label;
-    const stepCanvas = document.createElement('canvas');
-    stepCanvas.className = 'processing-canvas';
-    if (modifier) stepCanvas.classList.add(`${modifier}__canvas`);
-    wrapper.appendChild(stepCanvas);
-    wrapper.appendChild(title);
-    section.appendChild(wrapper);
 
-    renderMatOnCanvas(mat, stepCanvas);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'processing-canvas';
+    if (modifier) canvas.classList.add(${modifier}__canvas);
+
+    const caption = document.createElement('figcaption');
+    caption.textContent = label;
+
+    wrapper.appendChild(canvas);
+    wrapper.appendChild(caption);
+    list.appendChild(wrapper);
+
+    renderMatOnCanvas(mat, canvas);
   };
 }
 
-function renderMatOnCanvas(mat, canvas) {
+function renderMatOnCanvas(mat, canvas)(mat, canvas) {
   const { displayMat, cleanup } = buildDisplayMat(mat);
   try {
     cv.imshow(canvas, displayMat);
@@ -350,19 +445,61 @@ function ensureProcessingStyles() {
   style.id = 'processing-step-styles';
   style.textContent = `
     .processing-steps {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
       margin-top: 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+    .processing-steps__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+    }
+    .processing-steps__header h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .processing-steps__toggle {
+      border: none;
+      background: #4f46e5;
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease;
+    }
+    .processing-steps__toggle:hover {
+      background: #4338ca;
+    }
+    .processing-steps__list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      padding: 16px;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    .processing-steps__list[data-expanded="true"] {
+      max-height: 1200px;
     }
     .processing-step {
-      flex: 1 1 180px;
-      max-width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      text-align: center;
+    }
+    .processing-step--pinned {
+      grid-column: 1 / -1;
     }
     .processing-step figcaption {
-      margin-top: 4px;
+      margin: 0;
       font-size: 0.85rem;
-      text-align: center;
     }
     .processing-step .processing-canvas {
       width: 100%;
@@ -744,3 +881,9 @@ function buildStlFileName(dimensions) {
   });
   return `gridfinium-box-${parts.join('x')}.stl`;
 }
+
+
+
+
+
+
