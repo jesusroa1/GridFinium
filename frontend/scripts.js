@@ -18,6 +18,7 @@ const THREE_CDN_SOURCES = Object.freeze([
   'https://unpkg.com/three@0.161.0/build/three.min.js',
 ]);
 let threeLoaderPromise = null;
+const OVERLAY_COORDINATE_SCALE = 1000;
 
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
@@ -82,15 +83,19 @@ async function processImageFromSource(imageSrc) {
 
   previewContainer.replaceChildren();
 
-  const { heading: resultHeading, canvas: resultCanvas } = createPreviewResultSection(previewContainer);
+  const {
+    heading: resultHeading,
+    canvas: resultCanvas,
+    overlay: resultOverlay,
+  } = createPreviewResultSection(previewContainer);
 
   const imageElement = new Image();
   const appendStep = createStepRenderer(previewContainer);
-  const renderStep = (label, mat, modifier) => {
+  const renderStep = (label, mat, modifier, renderOptions) => {
     if (sessionId !== activePreviewToken) return;
     if (modifier === 'step-outlined') {
       resultHeading.textContent = label;
-      renderMatOnCanvas(mat, resultCanvas);
+      renderMatOnCanvas(mat, resultCanvas, renderOptions);
       if (sessionId !== activePreviewToken) return;
     }
     appendStep(label, mat, modifier);
@@ -108,15 +113,31 @@ async function processImageFromSource(imageSrc) {
 
     const paperContour = detectPaperContour(src, renderStep);
 
+    let finalDisplay = src;
+    let finalOptions;
+
     if (paperContour) {
+      const corners = extractContourPoints(paperContour);
+      finalDisplay = src.clone();
       const outline = new cv.MatVector();
       outline.push_back(paperContour);
-      cv.drawContours(src, outline, 0, new cv.Scalar(0, 255, 0, 255), 6, cv.LINE_AA);
+      cv.drawContours(finalDisplay, outline, 0, new cv.Scalar(0, 255, 0, 255), 6, cv.LINE_AA);
       outline.delete();
+      finalOptions = {
+        onRender: (info) => attachPaperOverlay(resultOverlay, corners, info),
+      };
       paperContour.delete();
+    } else {
+      finalOptions = {
+        onRender: () => attachPaperOverlay(resultOverlay, null, null),
+      };
     }
 
-    renderStep('Outlined Paper', src, 'step-outlined');
+    renderStep('Outlined Paper', finalDisplay, 'step-outlined', finalOptions);
+
+    if (finalDisplay !== src) {
+      finalDisplay.delete();
+    }
   } finally {
     src.delete();
   }
@@ -138,12 +159,16 @@ function createPreviewResultSection(container) {
   const canvas = document.createElement('canvas');
   canvas.className = 'preview-result__canvas';
 
+  const overlay = document.createElement('div');
+  overlay.className = 'preview-result__overlay';
+
   canvasWrapper.appendChild(canvas);
+  canvasWrapper.appendChild(overlay);
   section.appendChild(heading);
   section.appendChild(canvasWrapper);
   container.appendChild(section);
 
-  return { heading, canvas };
+  return { heading, canvas, overlay };
 }
 
 function loadDefaultPreview(imageSrc) {
@@ -422,18 +447,30 @@ function createStepRenderer(container) {
   };
 }
 
-function renderMatOnCanvas(mat, canvas) {
-  const { displayMat, cleanup } = buildDisplayMat(mat);
+function renderMatOnCanvas(mat, canvas, options = {}) {
+  const { displayMat, cleanup, originalWidth, originalHeight, displayWidth, displayHeight } =
+    buildDisplayMat(mat);
   try {
     cv.imshow(canvas, displayMat);
   } finally {
     cleanup();
+  }
+
+  if (typeof options.onRender === 'function') {
+    options.onRender({
+      originalWidth,
+      originalHeight,
+      displayWidth,
+      displayHeight,
+    });
   }
 }
 
 function buildDisplayMat(mat) {
   const owned = [];
   let display = mat;
+  const originalWidth = mat.cols;
+  const originalHeight = mat.rows;
 
   if (display.type() === cv.CV_8UC1) {
     const rgba = new cv.Mat();
@@ -458,6 +495,10 @@ function buildDisplayMat(mat) {
     cleanup: () => {
       owned.forEach((item) => item.delete());
     },
+    originalWidth,
+    originalHeight,
+    displayWidth: display.cols,
+    displayHeight: display.rows,
   };
 }
 
@@ -466,6 +507,62 @@ function ensureProcessingStyles() {
   const style = document.createElement('style');
   style.id = 'processing-step-styles';
   style.textContent = `
+    .preview-result {
+      display: grid;
+      gap: 12px;
+    }
+    .preview-result__heading {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+    .preview-result__canvas-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }
+    .preview-result__canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    }
+    .preview-result__overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .preview-result__svg {
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .preview-result__outline {
+      fill: rgba(79, 70, 229, 0.12);
+      stroke: #4f46e5;
+      stroke-width: 6;
+      vector-effect: non-scaling-stroke;
+    }
+    .preview-result__handle {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #312e81;
+      background: #ffffff;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: grab;
+      touch-action: none;
+      padding: 0;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+    .preview-result__handle:active {
+      cursor: grabbing;
+      transform: translate(-50%, -50%) scale(1.05);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.24);
+    }
     .processing-steps {
       margin-top: 16px;
       border: 1px solid #ddd;
@@ -540,6 +637,108 @@ function ensureProcessingStyles() {
     .processing-step.step-outlined .processing-canvas { border-color: #2e7d32; }
   `;
   document.head.appendChild(style);
+}
+
+function extractContourPoints(contour) {
+  const data = contour.data32S;
+  const points = [];
+  for (let i = 0; i < data.length; i += 2) {
+    points.push({ x: data[i], y: data[i + 1] });
+  }
+  return points;
+}
+
+function attachPaperOverlay(overlay, corners, renderInfo) {
+  if (!overlay) return;
+  overlay.replaceChildren();
+
+  if (!corners || corners.length < 4 || !renderInfo) {
+    return;
+  }
+
+  // Store the handle positions in normalized units so the overlay can scale with the canvas.
+  const normalizedCorners = corners.map((corner) => ({
+    x: clamp(corner.x / renderInfo.originalWidth, 0, 1),
+    y: clamp(corner.y / renderInfo.originalHeight, 0, 1),
+  }));
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('preview-result__svg');
+  svg.setAttribute('viewBox', `0 0 ${OVERLAY_COORDINATE_SCALE} ${OVERLAY_COORDINATE_SCALE}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  polygon.classList.add('preview-result__outline');
+  svg.appendChild(polygon);
+  overlay.appendChild(svg);
+
+  const handles = [];
+
+  const refreshOverlay = () => {
+    const pointString = normalizedCorners
+      .map((corner) => `${(corner.x * OVERLAY_COORDINATE_SCALE).toFixed(2)},${(corner.y * OVERLAY_COORDINATE_SCALE).toFixed(2)}`)
+      .join(' ');
+    polygon.setAttribute('points', pointString);
+    handles.forEach((handle, index) => {
+      const { x, y } = normalizedCorners[index];
+      handle.style.left = `${(x * 100).toFixed(2)}%`;
+      handle.style.top = `${(y * 100).toFixed(2)}%`;
+    });
+  };
+
+  normalizedCorners.forEach((_corner, index) => {
+    const handle = createOverlayHandle(overlay, normalizedCorners, index, refreshOverlay);
+    handle.setAttribute('aria-label', `Drag corner ${index + 1}`);
+    handle.setAttribute('title', 'Drag to adjust the detected outline');
+    handles.push(handle);
+    overlay.appendChild(handle);
+  });
+
+  refreshOverlay();
+}
+
+function createOverlayHandle(overlay, corners, index, refresh) {
+  const handle = document.createElement('button');
+  handle.type = 'button';
+  handle.className = 'preview-result__handle';
+
+  handle.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+
+    const updateFromPointer = (moveEvent) => {
+      const bounds = overlay.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+
+      const normalizedX = clamp((moveEvent.clientX - bounds.left) / bounds.width, 0, 1);
+      const normalizedY = clamp((moveEvent.clientY - bounds.top) / bounds.height, 0, 1);
+
+      corners[index].x = normalizedX;
+      corners[index].y = normalizedY;
+      refresh();
+    };
+
+    updateFromPointer(event);
+
+    const stopTracking = (endEvent) => {
+      if (handle.hasPointerCapture(endEvent.pointerId)) {
+        handle.releasePointerCapture(endEvent.pointerId);
+      }
+      handle.removeEventListener('pointermove', updateFromPointer);
+      handle.removeEventListener('pointerup', stopTracking);
+      handle.removeEventListener('pointercancel', stopTracking);
+    };
+
+    handle.addEventListener('pointermove', updateFromPointer);
+    handle.addEventListener('pointerup', stopTracking);
+    handle.addEventListener('pointercancel', stopTracking);
+  });
+
+  return handle;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function insertTopContour(list, contour, area, perimeter) {
