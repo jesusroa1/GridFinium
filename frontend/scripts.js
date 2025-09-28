@@ -11,6 +11,10 @@ const STL_DEFAULT_DIMENSIONS = Object.freeze({
   height: 3,
 });
 const INCH_TO_MM = 25.4;
+const THREE_CDN_SOURCES = Object.freeze([
+  'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js',
+  'https://unpkg.com/three@0.161.0/build/three.min.js',
+]);
 
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
@@ -33,15 +37,25 @@ if (fileInput && previewContainer) {
 }
 
 setupTabs();
-initStlDesigner({
-  viewerId: 'stl-viewer',
-  widthInputId: 'stl-width',
-  depthInputId: 'stl-depth',
-  heightInputId: 'stl-height',
-  summaryId: 'stl-summary',
-  downloadButtonId: 'stl-download',
-  resetButtonId: 'stl-reset',
-});
+ensureThreeJs()
+  .then(() => {
+    initStlDesigner({
+      viewerId: 'stl-viewer',
+      widthInputId: 'stl-width',
+      depthInputId: 'stl-depth',
+      heightInputId: 'stl-height',
+      summaryId: 'stl-summary',
+      downloadButtonId: 'stl-download',
+      resetButtonId: 'stl-reset',
+    });
+  })
+  .catch((error) => {
+    const viewerRoot = document.getElementById('stl-viewer');
+    if (viewerRoot) {
+      viewerRoot.textContent = 'Three.js failed to load, so the 3D preview is unavailable.';
+    }
+    console.error('GridFinium: unable to load Three.js.', error);
+  });
 
 async function handleFileSelection(event) {
   // Start fresh every time a new file is chosen.
@@ -115,6 +129,69 @@ function waitForOpenCv() {
       if (bindRuntime()) clearInterval(timer);
     }, POLL_INTERVAL_MS);
   });
+}
+
+let threeLoaderPromise = null;
+
+function ensureThreeJs() {
+  if (typeof THREE !== 'undefined') return Promise.resolve();
+  if (threeLoaderPromise) return threeLoaderPromise;
+
+  threeLoaderPromise = new Promise((resolve, reject) => {
+    const trySource = (index) => {
+      if (typeof THREE !== 'undefined') {
+        resolve();
+        return;
+      }
+
+      if (index >= THREE_CDN_SOURCES.length) {
+        reject(new Error('Three.js failed to load'));
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = THREE_CDN_SOURCES[index];
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+
+      const cleanup = () => {
+        script.removeEventListener('load', handleLoad);
+        script.removeEventListener('error', handleError);
+      };
+
+      const handleLoad = () => {
+        cleanup();
+        if (typeof THREE !== 'undefined') {
+          resolve();
+        } else {
+          script.remove();
+          trySource(index + 1);
+        }
+      };
+
+      const handleError = () => {
+        cleanup();
+        script.remove();
+        trySource(index + 1);
+      };
+
+      script.addEventListener('load', handleLoad);
+      script.addEventListener('error', handleError);
+      document.head.appendChild(script);
+    };
+
+    trySource(0);
+  }).then(
+    () => {
+      return undefined;
+    },
+    (error) => {
+      threeLoaderPromise = null;
+      throw error;
+    },
+  );
+
+  return threeLoaderPromise;
 }
 
 function detectPaperContour(src, showStep) {
