@@ -549,7 +549,7 @@ function ensureProcessingStyles() {
     .preview-result__outline {
       fill: rgba(79, 70, 229, 0.12);
       stroke: #4f46e5;
-      stroke-width: 6;
+      stroke-width: 3;
       vector-effect: non-scaling-stroke;
     }
     .preview-result__selection {
@@ -566,8 +566,8 @@ function ensureProcessingStyles() {
     }
     .preview-result__hint-point {
       position: absolute;
-      width: 14px;
-      height: 14px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       border: 2px solid #ffffff;
       background: #ec4899;
@@ -1470,7 +1470,7 @@ function initCanvasStlDesigner({
     (event) => {
       event.preventDefault();
       const zoomFactor = Math.exp(event.deltaY * 0.001);
-      state.zoom = Math.min(3, Math.max(0.4, state.zoom / zoomFactor));
+      state.zoom = Math.min(6, Math.max(0.4, state.zoom / zoomFactor));
       scheduleRender();
     },
     { passive: false },
