@@ -33,6 +33,8 @@ const previewContainer = document.getElementById(DOM_IDS.preview);
 // Start preparing OpenCV right away so we can await it later.
 const cvReady = waitForOpenCv();
 let activePreviewToken = 0;
+let activeImageMat = null;
+const overlayStateMap = new WeakMap();
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
@@ -108,6 +110,12 @@ async function processImageFromSource(imageSrc) {
   if (sessionId !== activePreviewToken) return;
 
   const src = cv.imread(imageElement);
+  if (sessionId !== activePreviewToken) {
+    src.delete();
+    return;
+  }
+
+  setActiveImageMat(src);
   try {
     renderStep('Original Photo', src, 'step-original');
 
@@ -129,7 +137,7 @@ async function processImageFromSource(imageSrc) {
       paperContour.delete();
     } else {
       finalOptions = {
-        onRender: () => attachPaperOverlay(resultOverlay, null, null),
+        onRender: (info) => attachPaperOverlay(resultOverlay, null, info),
       };
     }
 
@@ -530,7 +538,8 @@ function ensureProcessingStyles() {
     .preview-result__overlay {
       position: absolute;
       inset: 0;
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: crosshair;
     }
     .preview-result__svg {
       width: 100%;
@@ -542,6 +551,35 @@ function ensureProcessingStyles() {
       stroke: #4f46e5;
       stroke-width: 6;
       vector-effect: non-scaling-stroke;
+    }
+    .preview-result__selection {
+      fill: rgba(236, 72, 153, 0.26);
+      stroke: #ec4899;
+      stroke-width: 4;
+      vector-effect: non-scaling-stroke;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .preview-result__selection[data-visible="true"] {
+      opacity: 1;
+    }
+    .preview-result__hint-point {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      background: #ec4899;
+      box-shadow: 0 8px 20px rgba(236, 72, 153, 0.4);
+      transform: translate(-50%, -50%) scale(0.85);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.18s ease, opacity 0.18s ease;
+    }
+    .preview-result__hint-point[data-visible="true"] {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
     }
     .preview-result__handle {
       position: absolute;
@@ -652,49 +690,77 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   if (!overlay) return;
   overlay.replaceChildren();
 
-  if (!corners || corners.length < 4 || !renderInfo) {
-    return;
-  }
-
-  // Store the handle positions in normalized units so the overlay can scale with the canvas.
-  const normalizedCorners = corners.map((corner) => ({
-    x: clamp(corner.x / renderInfo.originalWidth, 0, 1),
-    y: clamp(corner.y / renderInfo.originalHeight, 0, 1),
-  }));
+  const state = {
+    displayInfo: renderInfo || null,
+    selectionPath: null,
+    hintPoint: null,
+  };
+  overlayStateMap.set(overlay, state);
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('preview-result__svg');
   svg.setAttribute('viewBox', `0 0 ${OVERLAY_COORDINATE_SCALE} ${OVERLAY_COORDINATE_SCALE}`);
   svg.setAttribute('preserveAspectRatio', 'none');
 
-  const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-  polygon.classList.add('preview-result__outline');
-  svg.appendChild(polygon);
+  let normalizedCorners = null;
+  let polygon = null;
+  const handles = [];
+  let refreshOverlay = null;
+
+  if (corners && corners.length >= 4 && renderInfo) {
+    normalizedCorners = corners.map((corner) => ({
+      x: clamp(corner.x / renderInfo.originalWidth, 0, 1),
+      y: clamp(corner.y / renderInfo.originalHeight, 0, 1),
+    }));
+
+    polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    polygon.classList.add('preview-result__outline');
+    svg.appendChild(polygon);
+
+    refreshOverlay = () => {
+      const pointString = normalizedCorners
+        .map((corner) => `${(corner.x * OVERLAY_COORDINATE_SCALE).toFixed(2)},${(corner.y * OVERLAY_COORDINATE_SCALE).toFixed(2)}`)
+        .join(' ');
+      polygon.setAttribute('points', pointString);
+      handles.forEach((handle, index) => {
+        const { x, y } = normalizedCorners[index];
+        handle.style.left = `${(x * 100).toFixed(2)}%`;
+        handle.style.top = `${(y * 100).toFixed(2)}%`;
+      });
+    };
+  }
+
+  const selection = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  selection.classList.add('preview-result__selection');
+  selection.dataset.visible = 'false';
+  selection.setAttribute('points', '');
+  svg.appendChild(selection);
+  state.selectionPath = selection;
+
   overlay.appendChild(svg);
 
-  const handles = [];
+  const hintPoint = document.createElement('span');
+  hintPoint.className = 'preview-result__hint-point';
+  hintPoint.setAttribute('aria-hidden', 'true');
+  overlay.appendChild(hintPoint);
+  state.hintPoint = hintPoint;
 
-  const refreshOverlay = () => {
-    const pointString = normalizedCorners
-      .map((corner) => `${(corner.x * OVERLAY_COORDINATE_SCALE).toFixed(2)},${(corner.y * OVERLAY_COORDINATE_SCALE).toFixed(2)}`)
-      .join(' ');
-    polygon.setAttribute('points', pointString);
-    handles.forEach((handle, index) => {
-      const { x, y } = normalizedCorners[index];
-      handle.style.left = `${(x * 100).toFixed(2)}%`;
-      handle.style.top = `${(y * 100).toFixed(2)}%`;
+  if (normalizedCorners && refreshOverlay) {
+    normalizedCorners.forEach((_corner, index) => {
+      const handle = createOverlayHandle(overlay, normalizedCorners, index, refreshOverlay);
+      handle.setAttribute('aria-label', `Drag corner ${index + 1}`);
+      handle.setAttribute('title', 'Drag to adjust the detected outline');
+      handles.push(handle);
+      overlay.appendChild(handle);
     });
-  };
 
-  normalizedCorners.forEach((_corner, index) => {
-    const handle = createOverlayHandle(overlay, normalizedCorners, index, refreshOverlay);
-    handle.setAttribute('aria-label', `Drag corner ${index + 1}`);
-    handle.setAttribute('title', 'Drag to adjust the detected outline');
-    handles.push(handle);
-    overlay.appendChild(handle);
-  });
+    refreshOverlay();
+  }
 
-  refreshOverlay();
+  clearSelectionHighlight(state);
+
+  overlay.removeEventListener('click', handleOverlayClick);
+  overlay.addEventListener('click', handleOverlayClick);
 }
 
 function createOverlayHandle(overlay, corners, index, refresh) {
@@ -702,7 +768,12 @@ function createOverlayHandle(overlay, corners, index, refresh) {
   handle.type = 'button';
   handle.className = 'preview-result__handle';
 
+  handle.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
   handle.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
 
@@ -735,6 +806,195 @@ function createOverlayHandle(overlay, corners, index, refresh) {
   });
 
   return handle;
+}
+
+function handleOverlayClick(event) {
+  if (event.button !== 0) return;
+
+  const overlay = event.currentTarget;
+  const state = overlayStateMap.get(overlay);
+  if (!state) return;
+
+  const bounds = overlay.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+
+  const normalizedX = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+  const normalizedY = clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
+
+  updateHintPoint(state, normalizedX, normalizedY);
+
+  if (!state.displayInfo || !activeImageMat) {
+    clearSelectionHighlight(state);
+    return;
+  }
+
+  const { displayWidth, displayHeight, originalWidth, originalHeight } = state.displayInfo;
+  if (!displayWidth || !displayHeight || !originalWidth || !originalHeight) {
+    clearSelectionHighlight(state);
+    return;
+  }
+
+  const displayX = normalizedX * displayWidth;
+  const displayY = normalizedY * displayHeight;
+  const scaleX = originalWidth / displayWidth;
+  const scaleY = originalHeight / displayHeight;
+
+  const targetPoint = {
+    x: clamp(Math.round(displayX * scaleX), 0, Math.max(0, originalWidth - 1)),
+    y: clamp(Math.round(displayY * scaleY), 0, Math.max(0, originalHeight - 1)),
+  };
+
+  const contour = findContourAtPoint(activeImageMat, targetPoint);
+  updateSelectionHighlight(state, contour, state.displayInfo);
+}
+
+function updateHintPoint(state, normalizedX, normalizedY) {
+  if (!state?.hintPoint) return;
+
+  state.hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
+  state.hintPoint.style.top = `${(normalizedY * 100).toFixed(2)}%`;
+  state.hintPoint.dataset.visible = 'true';
+}
+
+function clearSelectionHighlight(state) {
+  if (!state?.selectionPath) return;
+  state.selectionPath.dataset.visible = 'false';
+  state.selectionPath.setAttribute('points', '');
+}
+
+function updateSelectionHighlight(state, contour, renderInfo) {
+  if (!state?.selectionPath) {
+    if (contour) contour.delete();
+    return;
+  }
+
+  if (!contour || !renderInfo) {
+    if (contour) contour.delete();
+    clearSelectionHighlight(state);
+    return;
+  }
+
+  const normalizedPoints = normalizedPointsFromContour(contour, renderInfo);
+  contour.delete();
+
+  if (normalizedPoints.length < 3) {
+    clearSelectionHighlight(state);
+    return;
+  }
+
+  const pointString = normalizedPoints
+    .map((point) => `${(point.x * OVERLAY_COORDINATE_SCALE).toFixed(2)},${(point.y * OVERLAY_COORDINATE_SCALE).toFixed(2)}`)
+    .join(' ');
+
+  state.selectionPath.setAttribute('points', pointString);
+  state.selectionPath.dataset.visible = 'true';
+}
+
+function normalizedPointsFromContour(contour, renderInfo) {
+  if (!contour || !renderInfo) return [];
+
+  const coords = contour.data32S;
+  const points = [];
+  for (let i = 0; i < coords.length; i += 2) {
+    const x = clamp(coords[i] / renderInfo.originalWidth, 0, 1);
+    const y = clamp(coords[i + 1] / renderInfo.originalHeight, 0, 1);
+    points.push({ x, y });
+  }
+  return points;
+}
+
+function findContourAtPoint(sourceMat, point) {
+  if (!sourceMat) return null;
+
+  const gray = new cv.Mat();
+  cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
+
+  const blurred = new cv.Mat();
+  cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+
+  const edges = new cv.Mat();
+  cv.Canny(blurred, edges, 60, 180);
+
+  const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+  cv.dilate(edges, edges, kernel);
+  cv.erode(edges, edges, kernel);
+  kernel.delete();
+
+  const contours = new cv.MatVector();
+  const hierarchy = new cv.Mat();
+  cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+  const minArea = sourceMat.rows * sourceMat.cols * 0.0002;
+  const testPoint = new cv.Point(point.x, point.y);
+  let insideContour = null;
+  let insideArea = Number.POSITIVE_INFINITY;
+  let fallbackContour = null;
+  let fallbackDistance = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < contours.size(); i += 1) {
+    const contour = contours.get(i);
+    const area = cv.contourArea(contour);
+    if (area < minArea) {
+      contour.delete();
+      continue;
+    }
+
+    const distance = cv.pointPolygonTest(contour, testPoint, true);
+
+    if (distance >= 0 && area < insideArea) {
+      if (insideContour) insideContour.delete();
+      insideContour = contour.clone();
+      insideArea = area;
+    } else if (distance < 0 && !insideContour) {
+      const absDistance = Math.abs(distance);
+      if (absDistance < fallbackDistance) {
+        if (fallbackContour) fallbackContour.delete();
+        fallbackContour = contour.clone();
+        fallbackDistance = absDistance;
+      }
+    }
+
+    contour.delete();
+  }
+
+  let selected = insideContour || fallbackContour;
+  if (selected) {
+    const perimeter = cv.arcLength(selected, true);
+    const epsilon = Math.max(2, perimeter * 0.02);
+    const approx = new cv.Mat();
+    cv.approxPolyDP(selected, approx, epsilon, true);
+    if (selected === insideContour) {
+      insideContour.delete();
+      insideContour = null;
+    }
+    if (selected === fallbackContour) {
+      fallbackContour.delete();
+      fallbackContour = null;
+    }
+    selected = approx;
+  }
+
+  if (insideContour) insideContour.delete();
+  if (fallbackContour) fallbackContour.delete();
+
+  gray.delete();
+  blurred.delete();
+  edges.delete();
+  contours.delete();
+  hierarchy.delete();
+
+  return selected;
+}
+
+function setActiveImageMat(mat) {
+  if (activeImageMat) {
+    activeImageMat.delete();
+    activeImageMat = null;
+  }
+
+  if (mat) {
+    activeImageMat = mat.clone();
+  }
 }
 
 function clamp(value, min, max) {
