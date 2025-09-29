@@ -713,9 +713,10 @@ function ensureProcessingStyles() {
       padding: 12px 16px;
       background: linear-gradient(135deg, #eef2ff, #f8fafc);
     }
-    .processing-steps__header h3 {
+    .processing-steps__title {
       margin: 0;
-      font-size: 1rem;
+      font-size: clamp(1.35rem, 2.5vw, 1.6rem);
+      font-weight: 700;
     }
     .processing-steps__toggle {
       border: none;
@@ -1243,7 +1244,7 @@ function setupHintTuningControls() {
   const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
 
   if (tuningContent && tuningToggle) {
-    let tuningExpanded = true;
+    let tuningExpanded = false;
 
     const syncTuningContent = () => {
       tuningContent.dataset.expanded = tuningExpanded ? 'true' : 'false';
