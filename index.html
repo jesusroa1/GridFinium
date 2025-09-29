@@ -81,6 +81,78 @@
       animation: fade-in 180ms ease;
     }
 
+    .tuning-panel {
+      margin-top: 36px;
+      padding: 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.18);
+      background: linear-gradient(135deg, #f8fafc, #eef2ff);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    }
+
+    .tuning-panel h2 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      font-size: clamp(1.35rem, 2.5vw, 1.6rem);
+    }
+
+    .tuning-panel p {
+      margin-top: 0;
+      margin-bottom: 18px;
+      color: #475569;
+    }
+
+    .tuning-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .tuning-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .tuning-field label {
+      font-weight: 600;
+    }
+
+    .tuning-field input[type="number"] {
+      border-radius: 10px;
+      border: 1px solid #cbd5f5;
+      padding: 10px 14px;
+      font-size: 1rem;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .tuning-field input[type="number"]:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .tuning-note {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #64748b;
+      line-height: 1.4;
+    }
+
+    .tuning-checkbox {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-top: 12px;
+      font-weight: 600;
+    }
+
+    .tuning-checkbox input[type="checkbox"] {
+      margin-top: 4px;
+      accent-color: #4f46e5;
+      width: 18px;
+      height: 18px;
+    }
+
     @keyframes fade-in {
       from {
         opacity: 0;
@@ -230,6 +302,37 @@
       <p>Upload a photo to detect and outline documents automatically.</p>
       <input type="file" accept=".jpg,.jpeg,.png" id="file-upload" name="file-upload">
       <div id="preview"></div>
+
+      <section class="tuning-panel" aria-labelledby="tuning-heading">
+        <h2 id="tuning-heading">2. Tuning Parameters</h2>
+        <p>Use these sliders to guide hint-based selections toward the object you care about.</p>
+        <div class="tuning-grid" role="group" aria-describedby="tuning-heading">
+          <div class="tuning-field">
+            <label for="hint-threshold-low">Canny low threshold</label>
+            <input type="number" id="hint-threshold-low" name="hint-threshold-low" min="0" max="255" step="1">
+            <p class="tuning-note">Lower values pick up faint edges. Raise this if tiny textures cause noisy selections.</p>
+          </div>
+          <div class="tuning-field">
+            <label for="hint-threshold-high">Canny high threshold</label>
+            <input type="number" id="hint-threshold-high" name="hint-threshold-high" min="0" max="255" step="1">
+            <p class="tuning-note">Higher numbers keep only strong borders. Drop it to help latch onto small items like the coaster.</p>
+          </div>
+          <div class="tuning-field">
+            <label for="hint-kernel-size">Morphology kernel size</label>
+            <input type="number" id="hint-kernel-size" name="hint-kernel-size" min="1" max="31" step="1">
+            <p class="tuning-note">Controls how aggressively edges are merged. Keep it small to separate nearby shapes.</p>
+          </div>
+          <div class="tuning-field">
+            <label for="hint-min-area">Minimum contour area (%)</label>
+            <input type="number" id="hint-min-area" name="hint-min-area" min="0" max="5" step="0.01">
+            <p class="tuning-note">Ignores shapes below this percentage of the full image. Reduce it to keep petite selections.</p>
+          </div>
+        </div>
+        <label class="tuning-checkbox" for="hint-show-steps">
+          <input type="checkbox" id="hint-show-steps" name="hint-show-steps">
+          <span>Display processing steps while outlining</span>
+        </label>
+      </section>
     </section>
 
     <section id="stl-tools" class="tab-panel" aria-label="STL Designer">

@@ -100,3 +100,40 @@ stable when you zoom in.
 - Keep this `readme.md` updated so future developers (and curious students) can follow along easily.
 
 Happy exploring and building!
+
+## Hint-based selection walkthrough
+When you tap or click on the preview we run an extra mini-pipeline that finds the
+shape surrounding your hint. Follow the diagram to see the steps.
+
+```mermaid
+flowchart TD
+    A["You click a hint point"] --> B["Convert image to gray again"]
+    B --> C["Blur slightly to quiet noise"]
+    C --> D["Detect edges with tuned thresholds"]
+    D --> E["Clean edges with a small kernel"]
+    E --> F["Collect all contours"]
+    F --> G["Pick the smallest contour that contains the hint"]
+    G --> H["Show pink selection overlay"]
+```
+
+### Settings you can tweak
+Several numbers control which contour wins once a hint is supplied:
+
+- **Canny thresholds (60, 180)** decide how strong an edge must be before it is
+  kept. Lower values make the picker more sensitive, which helps highlight
+  smaller objects like the coaster at the cost of catching more noise.
+- **Morphology kernel size (3×3)** closes gaps between edge pixels. Increase it
+  to merge nearby edges into one shape, or shrink it to keep neighboring objects
+  separate so the coaster does not blend into the surrounding paper.
+- **Minimum contour area (`imageArea × 0.0002`)** filters out tiny fragments.
+  Reduce this ratio if the coaster is still ignored, or raise it to focus only
+  on large objects such as the sheet of paper.
+
+Adjusting these values in `findContourAtPoint` inside `scripts.js` lets you
+fine-tune what is selected after a hint. Try lowering the thresholds first, and
+then tweak the kernel size or minimum area until the pink overlay hugs the
+coaster instead of the entire page.
+
+You can now experiment with these numbers directly from the **Tuning Parameters**
+panel on the Image Tools tab—no code edits required. Adjust the sliders, click
+the preview again, and watch the hint selection update instantly.
