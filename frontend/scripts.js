@@ -21,10 +21,10 @@ let threeLoaderPromise = null;
 const OVERLAY_COORDINATE_SCALE = 1000;
 
 const HINT_TUNING_DEFAULTS = Object.freeze({
-  cannyLowThreshold: 60,
-  cannyHighThreshold: 180,
-  kernelSize: 3,
-  minAreaRatio: 0.0002,
+  cannyLowThreshold: 40,
+  cannyHighThreshold: 120,
+  kernelSize: 5,
+  minAreaRatio: 0.0001,
   showProcessingSteps: true,
 });
 
