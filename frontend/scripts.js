@@ -42,6 +42,7 @@ const MAX_DISPLAY_CONTOURS = 3;
 // Keep preview canvases to a mobile-friendly size so zooming never tries to render
 // the original multi-megapixel image at full resolution.
 const MAX_DISPLAY_DIMENSION = 1280;
+let processingStepsIdCounter = 0;
 
 // Grab the upload input and preview container once the page loads.
 const fileInput = document.getElementById(DOM_IDS.input);
@@ -51,9 +52,6 @@ const cvReady = waitForOpenCv();
 let activePreviewToken = 0;
 let activeImageMat = null;
 const overlayStateMap = new WeakMap();
-let activeOverlayElement = null;
-let activeProcessingSteps = null;
-let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
@@ -198,6 +196,25 @@ function createPreviewResultSection(container) {
   canvasWrapper.appendChild(overlay);
   section.appendChild(heading);
   section.appendChild(canvasWrapper);
+
+  const controls = document.createElement('div');
+  controls.className = 'preview-result__controls';
+
+  const resetHintsButton = document.createElement('button');
+  resetHintsButton.type = 'button';
+  resetHintsButton.className = 'preview-result__button';
+  resetHintsButton.textContent = 'Reset hints';
+  resetHintsButton.disabled = true;
+  resetHintsButton.addEventListener('click', () => {
+    const state = overlayStateMap.get(overlay);
+    if (!state) return;
+    clearHintPoints(state);
+    clearSelectionHighlight(state);
+  });
+
+  controls.appendChild(resetHintsButton);
+  section.appendChild(controls);
+  overlayResetButtonMap.set(overlay, resetHintsButton);
   container.appendChild(section);
 
   return { heading, canvas, overlay };
@@ -418,7 +435,7 @@ function createStepRenderer(container) {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'processing-steps__toggle';
-  toggle.textContent = 'Hide details';
+  toggle.textContent = 'Show details';
 
   header.appendChild(title);
   header.appendChild(toggle);
@@ -426,11 +443,14 @@ function createStepRenderer(container) {
 
   const list = document.createElement('div');
   list.className = 'processing-steps__list';
+  const listId = `processing-steps-${processingStepsIdCounter += 1}`;
+  list.id = listId;
   section.appendChild(list);
+  toggle.setAttribute('aria-controls', listId);
 
   container.appendChild(section);
 
-  let expanded = true;
+  let expanded = false;
 
   const syncListStyles = () => {
     list.dataset.expanded = expanded ? 'true' : 'false';
@@ -580,6 +600,11 @@ function ensureProcessingStyles() {
       pointer-events: auto;
       cursor: crosshair;
     }
+    .preview-result__hint-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
     .preview-result__svg {
       width: 100%;
       height: 100%;
@@ -619,6 +644,30 @@ function ensureProcessingStyles() {
     .preview-result__hint-point[data-visible="true"] {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
+    }
+    .preview-result__controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .preview-result__button {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      background: #e0e7ff;
+      color: #312e81;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.15s ease;
+    }
+    .preview-result__button:hover:not(:disabled) {
+      background: #c7d2fe;
+      transform: translateY(-1px);
+    }
+    .preview-result__button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
     }
     .preview-result__handle {
       position: absolute;
@@ -732,9 +781,7 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   const state = {
     displayInfo: renderInfo || null,
     selectionPath: null,
-    hintPoint: null,
-    lastHintPixel: null,
-    lastHintNormalized: null,
+
   };
   overlayStateMap.set(overlay, state);
   activeOverlayElement = overlay;
@@ -781,11 +828,14 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
 
   overlay.appendChild(svg);
 
-  const hintPoint = document.createElement('span');
-  hintPoint.className = 'preview-result__hint-point';
-  hintPoint.setAttribute('aria-hidden', 'true');
-  overlay.appendChild(hintPoint);
-  state.hintPoint = hintPoint;
+  const hintLayer = document.createElement('div');
+  hintLayer.className = 'preview-result__hint-layer';
+  overlay.appendChild(hintLayer);
+  state.hintLayer = hintLayer;
+  state.hintPoints = [];
+  if (state.resetButton) {
+    state.resetButton.disabled = true;
+  }
 
   if (normalizedCorners && refreshOverlay) {
     normalizedCorners.forEach((_corner, index) => {
@@ -863,7 +913,7 @@ function handleOverlayClick(event) {
   const normalizedX = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
   const normalizedY = clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
 
-  updateHintPoint(state, normalizedX, normalizedY);
+  addHintPoint(state, normalizedX, normalizedY);
 
   if (!state.displayInfo || !activeImageMat) {
     clearSelectionHighlight(state);
@@ -891,13 +941,37 @@ function handleOverlayClick(event) {
   updateSelectionHighlight(state, contour, state.displayInfo);
 }
 
-function updateHintPoint(state, normalizedX, normalizedY) {
-  if (!state?.hintPoint) return;
+function addHintPoint(state, normalizedX, normalizedY) {
+  if (!state?.hintLayer) return;
+
+  hintPoint.className = 'preview-result__hint-point';
+  hintPoint.setAttribute('aria-hidden', 'true');
+  hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
+  hintPoint.style.top = `${(normalizedY * 100).toFixed(2)}%`;
+  hintPoint.dataset.visible = 'true';
+  state.hintLayer.appendChild(hintPoint);
+  state.hintPoints.push(hintPoint);
+
+  if (state.resetButton) {
+    state.resetButton.disabled = false;
+  }
+}
+
+function clearHintPoints(state) {
+  if (!state?.hintLayer) return;
+
+  state.hintLayer.replaceChildren();
+  state.hintPoints = [];
+
+  if (state.resetButton) {
+    state.resetButton.disabled = true;
+  }
 
   state.hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
   state.hintPoint.style.top = `${(normalizedY * 100).toFixed(2)}%`;
   state.hintPoint.dataset.visible = 'true';
   state.lastHintNormalized = { x: normalizedX, y: normalizedY };
+
 }
 
 function clearSelectionHighlight(state) {
