@@ -863,6 +863,7 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
     displayInfo: renderInfo || null,
     selectionPath: null,
     resetButton: overlayResetButtonMap.get(overlay) || null,
+    paperOutline: null,
   };
   overlayStateMap.set(overlay, state);
   activeOverlayElement = overlay;
@@ -883,6 +884,11 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
       y: clamp(corner.y / renderInfo.originalHeight, 0, 1),
     }));
 
+    state.paperOutline = normalizedCorners.map((corner) => ({
+      x: clamp(corner.x, 0, 1),
+      y: clamp(corner.y, 0, 1),
+    }));
+
     polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     polygon.classList.add('preview-result__outline');
     svg.appendChild(polygon);
@@ -897,6 +903,10 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
         handle.style.left = `${(x * 100).toFixed(2)}%`;
         handle.style.top = `${(y * 100).toFixed(2)}%`;
       });
+      state.paperOutline = normalizedCorners.map((corner) => ({
+        x: clamp(corner.x, 0, 1),
+        y: clamp(corner.y, 0, 1),
+      }));
     };
   }
 
@@ -1230,7 +1240,13 @@ function runHintSelection(state) {
   if (!state || !state.displayInfo || !state.lastHintPixel || !activeImageMat) return;
 
   const showStep = prepareHintStepRenderer();
-  const result = findContourAtPoint(activeImageMat, state.lastHintPixel, showStep, state.displayInfo);
+  const result = findContourAtPoint(
+    activeImageMat,
+    state.lastHintPixel,
+    showStep,
+    state.displayInfo,
+    state.paperOutline,
+  );
   if (!result) {
     updateSelectionHighlight(state, null, state.displayInfo);
     return;
@@ -1240,7 +1256,7 @@ function runHintSelection(state) {
   updateSelectionHighlight(state, contour, state.displayInfo, normalizedPoints);
 }
 
-function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
+function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutline) {
   if (!sourceMat) return null;
 
   const renderStep = typeof showStep === 'function' ? showStep : null;
@@ -1251,11 +1267,26 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
     });
   const baseStepOptions = normalizedHint ? { overlayPoints: [normalizedHint] } : undefined;
 
-  let sourceForDisplay = sourceMat;
-  let cleanupSourceDisplay = null;
+  const normalizedPaperOutline = Array.isArray(paperOutline) && paperOutline.length >= 3
+    ? paperOutline
+    : null;
+
+  let baseDisplayMat = sourceMat;
+  let baseCleanup = null;
+
+  if (renderStep && normalizedPaperOutline) {
+    const masked = buildMaskedDisplayMat(sourceMat, normalizedPaperOutline, displayInfo);
+    if (masked) {
+      baseDisplayMat = masked.mat;
+      baseCleanup = masked.cleanup;
+    }
+  }
+
+  let sourceForDisplay = baseDisplayMat;
+  let cleanupSourceDisplay = baseCleanup;
 
   if (renderStep && normalizedHint) {
-    sourceForDisplay = sourceMat.clone();
+    const highlighted = baseDisplayMat.clone();
 
     const hintLocation = new cv.Point(point.x, point.y);
     const scaleEstimate = (() => {
@@ -1278,15 +1309,26 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
     const coreRadius = Math.max(1, Math.round(innerRadius * 0.4));
 
     // Recreate the layered white/pink/white target used for the interactive hint marker.
-    cv.circle(sourceForDisplay, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
-    cv.circle(sourceForDisplay, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
+    cv.circle(highlighted, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+    cv.circle(highlighted, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
     if (coreRadius < innerRadius) {
-      cv.circle(sourceForDisplay, hintLocation, coreRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+      cv.circle(highlighted, hintLocation, coreRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
     }
 
+    sourceForDisplay = highlighted;
     cleanupSourceDisplay = () => {
-      sourceForDisplay.delete();
+      highlighted.delete();
+      if (typeof baseCleanup === 'function') {
+        baseCleanup();
+        baseCleanup = null;
+      }
     };
+  } else if (!renderStep && typeof baseCleanup === 'function') {
+    // No display step rendered but we created a masked copy, so clean it up now.
+    baseCleanup();
+    baseCleanup = null;
+    sourceForDisplay = sourceMat;
+    cleanupSourceDisplay = null;
   }
 
   if (renderStep) {
@@ -1295,6 +1337,11 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
 
   if (cleanupSourceDisplay) {
     cleanupSourceDisplay();
+    cleanupSourceDisplay = null;
+    baseCleanup = null;
+  } else if (typeof baseCleanup === 'function') {
+    baseCleanup();
+    baseCleanup = null;
   }
   const tuning = getHintTuningConfig();
   const gray = new cv.Mat();
@@ -1423,6 +1470,59 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
   if (!selected) return null;
 
   return { contour: selected, normalizedPoints };
+}
+
+function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
+  // Create a display-friendly copy of the image that hides everything outside the paper polygon.
+  if (!sourceMat || !Array.isArray(normalizedOutline) || normalizedOutline.length < 3) return null;
+
+  const hasWidth = dimensions && Number.isFinite(dimensions.originalWidth) && dimensions.originalWidth > 0;
+  const hasHeight = dimensions && Number.isFinite(dimensions.originalHeight) && dimensions.originalHeight > 0;
+  const baseWidth = hasWidth ? dimensions.originalWidth : sourceMat.cols;
+  const baseHeight = hasHeight ? dimensions.originalHeight : sourceMat.rows;
+
+  if (!baseWidth || !baseHeight) return null;
+
+  const scaleX = baseWidth ? sourceMat.cols / baseWidth : 1;
+  const scaleY = baseHeight ? sourceMat.rows / baseHeight : 1;
+  const maxX = Math.max(0, baseWidth - 1);
+  const maxY = Math.max(0, baseHeight - 1);
+
+  const pointData = [];
+  normalizedOutline.forEach((corner) => {
+    if (!corner) return;
+    const normalizedXRaw = Number(corner.x);
+    const normalizedYRaw = Number(corner.y);
+    const normalizedX = clamp(Number.isFinite(normalizedXRaw) ? normalizedXRaw : 0, 0, 1);
+    const normalizedY = clamp(Number.isFinite(normalizedYRaw) ? normalizedYRaw : 0, 0, 1);
+    const pixelX = clamp(Math.round(normalizedX * maxX * scaleX), 0, Math.max(0, sourceMat.cols - 1));
+    const pixelY = clamp(Math.round(normalizedY * maxY * scaleY), 0, Math.max(0, sourceMat.rows - 1));
+    pointData.push(pixelX, pixelY);
+  });
+
+  if (pointData.length < 6) return null;
+
+  const polygon = cv.matFromArray(pointData.length / 2, 1, cv.CV_32SC2, pointData);
+  const polygons = new cv.MatVector();
+  polygons.push_back(polygon);
+
+  const mask = cv.Mat.zeros(sourceMat.rows, sourceMat.cols, cv.CV_8UC1);
+  cv.fillPoly(mask, polygons, new cv.Scalar(255, 255, 255, 255));
+
+  polygons.delete();
+  polygon.delete();
+
+  const masked = new cv.Mat(sourceMat.rows, sourceMat.cols, sourceMat.type());
+  masked.setTo(new cv.Scalar(255, 255, 255, 255));
+  sourceMat.copyTo(masked, mask);
+  mask.delete();
+
+  return {
+    mat: masked,
+    cleanup: () => {
+      masked.delete();
+    },
+  };
 }
 
 function getHintTuningConfig() {
