@@ -119,13 +119,13 @@ flowchart TD
 ### Settings you can tweak
 Several numbers control which contour wins once a hint is supplied:
 
-- **Canny thresholds (60, 180)** decide how strong an edge must be before it is
+- **Canny thresholds (40, 120)** decide how strong an edge must be before it is
   kept. Lower values make the picker more sensitive, which helps highlight
   smaller objects like the coaster at the cost of catching more noise.
-- **Morphology kernel size (3×3)** closes gaps between edge pixels. Increase it
+- **Morphology kernel size (5×5)** closes gaps between edge pixels. Increase it
   to merge nearby edges into one shape, or shrink it to keep neighboring objects
   separate so the coaster does not blend into the surrounding paper.
-- **Minimum contour area (`imageArea × 0.0002`)** filters out tiny fragments.
+- **Minimum contour area (`imageArea × 0.0001`)** filters out tiny fragments.
   Reduce this ratio if the coaster is still ignored, or raise it to focus only
   on large objects such as the sheet of paper.
 
