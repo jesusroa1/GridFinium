@@ -43,6 +43,7 @@ const MAX_DISPLAY_CONTOURS = 3;
 // the original multi-megapixel image at full resolution.
 const MAX_DISPLAY_DIMENSION = 1280;
 let processingStepsIdCounter = 0;
+let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
 // Grab the upload input and preview container once the page loads.
 const fileInput = document.getElementById(DOM_IDS.input);
@@ -51,7 +52,10 @@ const previewContainer = document.getElementById(DOM_IDS.preview);
 const cvReady = waitForOpenCv();
 let activePreviewToken = 0;
 let activeImageMat = null;
+let activeOverlayElement = null;
+let activeProcessingSteps = null;
 const overlayStateMap = new WeakMap();
+const overlayResetButtonMap = new WeakMap();
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
@@ -781,7 +785,7 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   const state = {
     displayInfo: renderInfo || null,
     selectionPath: null,
-
+    resetButton: overlayResetButtonMap.get(overlay) || null,
   };
   overlayStateMap.set(overlay, state);
   activeOverlayElement = overlay;
@@ -833,6 +837,7 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   overlay.appendChild(hintLayer);
   state.hintLayer = hintLayer;
   state.hintPoints = [];
+  state.lastHintPixel = null;
   if (state.resetButton) {
     state.resetButton.disabled = true;
   }
@@ -944,6 +949,7 @@ function handleOverlayClick(event) {
 function addHintPoint(state, normalizedX, normalizedY) {
   if (!state?.hintLayer) return;
 
+  const hintPoint = document.createElement('span');
   hintPoint.className = 'preview-result__hint-point';
   hintPoint.setAttribute('aria-hidden', 'true');
   hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
@@ -962,16 +968,11 @@ function clearHintPoints(state) {
 
   state.hintLayer.replaceChildren();
   state.hintPoints = [];
+  state.lastHintPixel = null;
 
   if (state.resetButton) {
     state.resetButton.disabled = true;
   }
-
-  state.hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
-  state.hintPoint.style.top = `${(normalizedY * 100).toFixed(2)}%`;
-  state.hintPoint.dataset.visible = 'true';
-  state.lastHintNormalized = { x: normalizedX, y: normalizedY };
-
 }
 
 function clearSelectionHighlight(state) {
