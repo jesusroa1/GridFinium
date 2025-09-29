@@ -538,6 +538,10 @@ function createStepRenderer(container, options = {}) {
       });
     }
 
+    if (Array.isArray(stepOptions.overlayPoints) && stepOptions.overlayPoints.length > 0) {
+      drawNormalizedPointsOnCanvas(canvas, stepOptions.overlayPoints, stepOptions.overlayPointStyle);
+    }
+
     updateSectionVisibility();
     syncListStyles();
 
@@ -1108,6 +1112,24 @@ function normalizedPointsFromContour(contour, dimensions) {
   return points;
 }
 
+function normalizedPointFromPixel(point, dimensions) {
+  if (!point || !dimensions) return null;
+
+  const width = Number.isFinite(dimensions.originalWidth) && dimensions.originalWidth > 0
+    ? dimensions.originalWidth
+    : (Number.isFinite(dimensions.displayWidth) && dimensions.displayWidth > 0 ? dimensions.displayWidth : null);
+  const height = Number.isFinite(dimensions.originalHeight) && dimensions.originalHeight > 0
+    ? dimensions.originalHeight
+    : (Number.isFinite(dimensions.displayHeight) && dimensions.displayHeight > 0 ? dimensions.displayHeight : null);
+
+  if (!width || !height) return null;
+
+  return {
+    x: clamp(point.x / width, 0, 1),
+    y: clamp(point.y / height, 0, 1),
+  };
+}
+
 function drawNormalizedPolygonOnCanvas(canvas, polygon, options = {}) {
   if (!canvas || !Array.isArray(polygon) || polygon.length < 3) return;
 
@@ -1145,6 +1167,41 @@ function drawNormalizedPolygonOnCanvas(canvas, polygon, options = {}) {
     context.strokeStyle = strokeStyle;
     context.stroke();
   }
+
+  context.restore();
+}
+
+function drawNormalizedPointsOnCanvas(canvas, points, style = {}) {
+  if (!canvas || !Array.isArray(points) || points.length === 0) return;
+
+  const context = canvas.getContext('2d');
+  if (!context) return;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  if (!width || !height) return;
+
+  // Mirror the styling of the interactive hint marker so the debug view stays familiar.
+  const radius = Number.isFinite(style.radius) ? style.radius : 5;
+  const fillStyle = typeof style.fillStyle === 'string' ? style.fillStyle : '#ec4899';
+  const strokeStyle = typeof style.strokeStyle === 'string' ? style.strokeStyle : '#ffffff';
+  const lineWidth = Number.isFinite(style.lineWidth) ? style.lineWidth : 2;
+
+  context.save();
+  context.fillStyle = fillStyle;
+  context.strokeStyle = strokeStyle;
+  context.lineWidth = lineWidth;
+
+  points.forEach((point) => {
+    if (!point) return;
+    const x = clamp(point.x, 0, 1) * width;
+    const y = clamp(point.y, 0, 1) * height;
+
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    if (fillStyle) context.fill();
+    if (strokeStyle && lineWidth > 0) context.stroke();
+  });
 
   context.restore();
 }
@@ -1187,20 +1244,69 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
   if (!sourceMat) return null;
 
   const renderStep = typeof showStep === 'function' ? showStep : null;
+  const normalizedHint = normalizedPointFromPixel(point, displayInfo)
+    || normalizedPointFromPixel(point, {
+      originalWidth: sourceMat.cols,
+      originalHeight: sourceMat.rows,
+    });
+  const baseStepOptions = normalizedHint ? { overlayPoints: [normalizedHint] } : undefined;
+
+  let sourceForDisplay = sourceMat;
+  let cleanupSourceDisplay = null;
+
+  if (renderStep && normalizedHint) {
+    sourceForDisplay = sourceMat.clone();
+
+    const hintLocation = new cv.Point(point.x, point.y);
+    const scaleEstimate = (() => {
+      if (displayInfo && displayInfo.originalWidth && displayInfo.displayWidth) {
+        const scaleX = displayInfo.originalWidth / displayInfo.displayWidth;
+        const scaleY = displayInfo.originalHeight / displayInfo.displayHeight;
+        if (Number.isFinite(scaleX) && Number.isFinite(scaleY) && scaleX > 0 && scaleY > 0) {
+          return Math.max(scaleX, scaleY);
+        }
+      }
+      const maxDimension = Math.max(sourceMat.cols, sourceMat.rows);
+      if (!maxDimension) return 1;
+      const ratio = maxDimension / MAX_DISPLAY_DIMENSION;
+      return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+    })();
+
+    const baseRadius = 5;
+    const outerRadius = Math.max(4, Math.round(baseRadius * scaleEstimate));
+    const innerRadius = Math.max(2, outerRadius - 3);
+    const coreRadius = Math.max(1, Math.round(innerRadius * 0.4));
+
+    // Recreate the layered white/pink/white target used for the interactive hint marker.
+    cv.circle(sourceForDisplay, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+    cv.circle(sourceForDisplay, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
+    if (coreRadius < innerRadius) {
+      cv.circle(sourceForDisplay, hintLocation, coreRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+    }
+
+    cleanupSourceDisplay = () => {
+      sourceForDisplay.delete();
+    };
+  }
+
   if (renderStep) {
-    renderStep('Hint Source - Original Photo', sourceMat, 'step-original');
+    renderStep('Hint Source - Original Photo', sourceForDisplay, 'step-original', baseStepOptions);
+  }
+
+  if (cleanupSourceDisplay) {
+    cleanupSourceDisplay();
   }
   const tuning = getHintTuningConfig();
   const gray = new cv.Mat();
   cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
   if (renderStep) {
-    renderStep('Hint Grayscale - cv.cvtColor()', gray, 'step-gray');
+    renderStep('Hint Grayscale - cv.cvtColor()', gray, 'step-gray', baseStepOptions);
   }
 
   const blurred = new cv.Mat();
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
   if (renderStep) {
-    renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred');
+    renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred', baseStepOptions);
   }
 
   const edges = new cv.Mat();
@@ -1210,17 +1316,17 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
   // to form a contour.
   cv.Canny(blurred, edges, tuning.cannyLowThreshold, tuning.cannyHighThreshold);
   if (renderStep) {
-    renderStep('Hint Edge Map - cv.Canny()', edges, 'step-edges-raw');
+    renderStep('Hint Edge Map - cv.Canny()', edges, 'step-edges-raw', baseStepOptions);
   }
 
   const kernel = cv.Mat.ones(tuning.kernelSize, tuning.kernelSize, cv.CV_8U);
   cv.dilate(edges, edges, kernel);
   if (renderStep) {
-    renderStep('Hint Dilated Edges - cv.dilate()', edges, 'step-edges-dilated');
+    renderStep('Hint Dilated Edges - cv.dilate()', edges, 'step-edges-dilated', baseStepOptions);
   }
   cv.erode(edges, edges, kernel);
   if (renderStep) {
-    renderStep('Hint Refined Edges - cv.erode()', edges, 'step-edges-cleaned');
+    renderStep('Hint Refined Edges - cv.erode()', edges, 'step-edges-cleaned', baseStepOptions);
   }
   kernel.delete();
 
@@ -1292,12 +1398,16 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
     selectionVector.push_back(selected);
     cv.drawContours(selectionDisplay, selectionVector, -1, new cv.Scalar(236, 72, 153, 255), 4, cv.LINE_AA);
     selectionVector.delete();
-    renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection', {
+    const selectionOptions = {
       overlayPolygon: normalizedPoints,
       overlayFill: 'rgba(236, 72, 153, 0.26)',
       overlayStroke: '#ec4899',
       overlayLineWidth: 4,
-    });
+    };
+    if (normalizedHint) {
+      selectionOptions.overlayPoints = [normalizedHint];
+    }
+    renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection', selectionOptions);
     selectionDisplay.delete();
   }
 
