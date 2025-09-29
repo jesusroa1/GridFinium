@@ -123,6 +123,7 @@ async function processImageFromSource(imageSrc) {
   activeHintProcessingSteps = createStepRenderer(previewContainer, {
     titleText: 'Hint Processing Steps',
     hideWhenEmpty: true,
+    startExpanded: true,
   });
   syncProcessingStepsVisibility();
   const renderStep = (label, mat, modifier, renderOptions) => {
@@ -1157,6 +1158,10 @@ function prepareHintStepRenderer() {
   }
 
   activeHintProcessingSteps.setVisible(Boolean(hintTuningState.showProcessingSteps));
+  if (hintTuningState.showProcessingSteps && typeof activeHintProcessingSteps.setExpanded === 'function') {
+    // Automatically expand the panel so the freshly generated hint steps are visible.
+    activeHintProcessingSteps.setExpanded(true);
+  }
 
   return (label, mat, modifier, stepOptions) => {
     activeHintProcessingSteps.renderStep(label, mat, modifier, stepOptions);
