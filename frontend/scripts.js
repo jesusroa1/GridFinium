@@ -53,7 +53,8 @@ const cvReady = waitForOpenCv();
 let activePreviewToken = 0;
 let activeImageMat = null;
 let activeOverlayElement = null;
-let activeProcessingSteps = null;
+let activePaperProcessingSteps = null;
+let activeHintProcessingSteps = null;
 const overlayStateMap = new WeakMap();
 const overlayResetButtonMap = new WeakMap();
 
@@ -107,7 +108,8 @@ async function processImageFromSource(imageSrc) {
 
   previewContainer.replaceChildren();
   activeOverlayElement = null;
-  activeProcessingSteps = null;
+  activePaperProcessingSteps = null;
+  activeHintProcessingSteps = null;
 
   const {
     heading: resultHeading,
@@ -116,8 +118,12 @@ async function processImageFromSource(imageSrc) {
   } = createPreviewResultSection(previewContainer);
 
   const imageElement = new Image();
-  const stepControls = createStepRenderer(previewContainer);
-  activeProcessingSteps = stepControls;
+  const paperSteps = createStepRenderer(previewContainer, { titleText: 'Paper Processing Steps' });
+  activePaperProcessingSteps = paperSteps;
+  activeHintProcessingSteps = createStepRenderer(previewContainer, {
+    titleText: 'Hint Processing Steps',
+    hideWhenEmpty: true,
+  });
   syncProcessingStepsVisibility();
   const renderStep = (label, mat, modifier, renderOptions) => {
     if (sessionId !== activePreviewToken) return;
@@ -126,7 +132,7 @@ async function processImageFromSource(imageSrc) {
       renderMatOnCanvas(mat, resultCanvas, renderOptions);
       if (sessionId !== activePreviewToken) return;
     }
-    stepControls.renderStep(label, mat, modifier);
+    paperSteps.renderStep(label, mat, modifier);
   };
 
   await loadImage(imageElement, imageSrc);
@@ -422,18 +428,27 @@ function detectPaperContour(src, showStep) {
   return paper;
 }
 
-function createStepRenderer(container) {
+function createStepRenderer(container, options = {}) {
   ensureProcessingStyles();
+
+  const {
+    titleText = 'Paper Processing Steps',
+    hideWhenEmpty = false,
+    startExpanded = false,
+  } = options;
 
   const section = document.createElement('section');
   section.className = 'processing-steps';
+  if (hideWhenEmpty) {
+    section.hidden = true;
+  }
 
   const header = document.createElement('div');
   header.className = 'processing-steps__header';
 
   const title = document.createElement('h3');
   title.className = 'processing-steps__title';
-  title.textContent = 'Paper Processing Steps';
+  title.textContent = titleText;
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -453,9 +468,25 @@ function createStepRenderer(container) {
 
   container.appendChild(section);
 
-  let expanded = false;
+  let expanded = Boolean(startExpanded);
+  let visible = true;
+
+  const updateSectionVisibility = () => {
+    if (hideWhenEmpty && list.childElementCount === 0) {
+      section.hidden = true;
+    } else {
+      section.hidden = false;
+    }
+  };
 
   const syncListStyles = () => {
+    if (!visible) {
+      list.dataset.expanded = 'false';
+      list.setAttribute('aria-hidden', 'true');
+      list.style.maxHeight = '0px';
+      return;
+    }
+
     list.dataset.expanded = expanded ? 'true' : 'false';
     list.setAttribute('aria-hidden', String(!expanded));
 
@@ -467,17 +498,19 @@ function createStepRenderer(container) {
   };
 
   const syncToggleState = () => {
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.textContent = expanded ? 'Hide details' : 'Show details';
+    toggle.setAttribute('aria-expanded', String(visible && expanded));
+    toggle.textContent = visible && expanded ? 'Hide details' : 'Show details';
     syncListStyles();
   };
 
   toggle.addEventListener('click', () => {
+    if (!visible) return;
     expanded = !expanded;
     syncToggleState();
   });
 
   syncToggleState();
+  updateSectionVisibility();
 
   const renderStep = (label, mat, modifier) => {
     const wrapper = document.createElement('figure');
@@ -496,7 +529,10 @@ function createStepRenderer(container) {
 
     renderMatOnCanvas(mat, canvas);
 
-    if (expanded) {
+    updateSectionVisibility();
+    syncListStyles();
+
+    if (visible && expanded) {
       // Keep the transition smooth as new steps are added.
       requestAnimationFrame(syncListStyles);
     }
@@ -504,18 +540,30 @@ function createStepRenderer(container) {
 
   return {
     renderStep,
-    setVisible: (visible) => {
-      section.hidden = false;
-      toggle.disabled = !visible;
-      section.classList.toggle('processing-steps--disabled', !visible);
+    reset: () => {
+      list.replaceChildren();
       if (!visible) {
+        list.style.display = 'none';
+      } else {
+        list.style.display = '';
+      }
+      updateSectionVisibility();
+      syncListStyles();
+    },
+    setVisible: (visible) => {
+      const nextVisible = Boolean(visible);
+      toggle.disabled = !nextVisible;
+      section.classList.toggle('processing-steps--disabled', !nextVisible);
+      if (!nextVisible) {
         expanded = false;
         list.style.display = 'none';
       } else {
         list.style.display = '';
         requestAnimationFrame(syncListStyles);
       }
+      visible = nextVisible;
       syncToggleState();
+      updateSectionVisibility();
     },
     setExpanded: (nextExpanded) => {
       expanded = Boolean(nextExpanded);
@@ -780,6 +828,7 @@ function ensureProcessingStyles() {
     .processing-step.step-edges-cleaned .processing-canvas { border-color: #f4511e; }
     .processing-step.step-contour .processing-canvas { border-color: #ff7043; }
     .processing-step.step-outlined .processing-canvas { border-color: #2e7d32; }
+    .processing-step.step-hint-selection .processing-canvas { border-color: #ec4899; }
   `;
   document.head.appendChild(style);
 }
@@ -957,8 +1006,7 @@ function handleOverlayClick(event) {
   };
 
   state.lastHintPixel = { ...targetPoint };
-  const contour = findContourAtPoint(activeImageMat, targetPoint);
-  updateSelectionHighlight(state, contour, state.displayInfo);
+  runHintSelection(state);
 }
 
 function addHintPoint(state, normalizedX, normalizedY) {
@@ -1037,15 +1085,49 @@ function normalizedPointsFromContour(contour, renderInfo) {
   return points;
 }
 
-function findContourAtPoint(sourceMat, point) {
+function prepareHintStepRenderer() {
+  // Reset and expose the hint processing renderer so we can document each pass.
+  if (!activeHintProcessingSteps) return null;
+
+  if (typeof activeHintProcessingSteps.reset === 'function') {
+    activeHintProcessingSteps.reset();
+  }
+
+  activeHintProcessingSteps.setVisible(Boolean(hintTuningState.showProcessingSteps));
+
+  return (label, mat, modifier) => {
+    activeHintProcessingSteps.renderStep(label, mat, modifier);
+  };
+}
+
+function runHintSelection(state) {
+  // Re-run the hint contour search and update both the overlay and debug steps.
+  if (!state || !state.displayInfo || !state.lastHintPixel || !activeImageMat) return;
+
+  const showStep = prepareHintStepRenderer();
+  const contour = findContourAtPoint(activeImageMat, state.lastHintPixel, showStep);
+  updateSelectionHighlight(state, contour, state.displayInfo);
+}
+
+function findContourAtPoint(sourceMat, point, showStep) {
   if (!sourceMat) return null;
 
+  const renderStep = typeof showStep === 'function' ? showStep : null;
+  if (renderStep) {
+    renderStep('Hint Source - Original Photo', sourceMat, 'step-original');
+  }
   const tuning = getHintTuningConfig();
   const gray = new cv.Mat();
   cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
+  if (renderStep) {
+    renderStep('Hint Grayscale - cv.cvtColor()', gray, 'step-gray');
+  }
 
   const blurred = new cv.Mat();
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+  if (renderStep) {
+    renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred');
+  }
 
   const edges = new cv.Mat();
   // When users drop a hint we do a separate pass to highlight the shape around
@@ -1053,10 +1135,19 @@ function findContourAtPoint(sourceMat, point) {
   // interactive tuning panel so you can steer which edges survive long enough
   // to form a contour.
   cv.Canny(blurred, edges, tuning.cannyLowThreshold, tuning.cannyHighThreshold);
+  if (renderStep) {
+    renderStep('Hint Edge Map - cv.Canny()', edges, 'step-edges-raw');
+  }
 
   const kernel = cv.Mat.ones(tuning.kernelSize, tuning.kernelSize, cv.CV_8U);
   cv.dilate(edges, edges, kernel);
+  if (renderStep) {
+    renderStep('Hint Dilated Edges - cv.dilate()', edges, 'step-edges-dilated');
+  }
   cv.erode(edges, edges, kernel);
+  if (renderStep) {
+    renderStep('Hint Refined Edges - cv.erode()', edges, 'step-edges-cleaned');
+  }
   kernel.delete();
 
   const contours = new cv.MatVector();
@@ -1111,6 +1202,16 @@ function findContourAtPoint(sourceMat, point) {
       fallbackContour = null;
     }
     selected = approx;
+  }
+
+  if (renderStep && selected) {
+    const selectionDisplay = sourceMat.clone();
+    const selectionVector = new cv.MatVector();
+    selectionVector.push_back(selected);
+    cv.drawContours(selectionDisplay, selectionVector, -1, new cv.Scalar(236, 72, 153, 255), 4, cv.LINE_AA);
+    selectionVector.delete();
+    renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection');
+    selectionDisplay.delete();
   }
 
   if (insideContour) insideContour.delete();
@@ -1362,8 +1463,13 @@ function applyHintTuningState(partial, options = {}) {
 }
 
 function syncProcessingStepsVisibility() {
-  if (!activeProcessingSteps) return;
-  activeProcessingSteps.setVisible(Boolean(hintTuningState.showProcessingSteps));
+  const visible = Boolean(hintTuningState.showProcessingSteps);
+  if (activePaperProcessingSteps) {
+    activePaperProcessingSteps.setVisible(visible);
+  }
+  if (activeHintProcessingSteps) {
+    activeHintProcessingSteps.setVisible(visible);
+  }
 }
 
 function rerunHintSelection() {
@@ -1371,9 +1477,7 @@ function rerunHintSelection() {
 
   const state = overlayStateMap.get(activeOverlayElement);
   if (!state || !state.displayInfo || !state.lastHintPixel) return;
-
-  const contour = findContourAtPoint(activeImageMat, state.lastHintPixel);
-  updateSelectionHighlight(state, contour, state.displayInfo);
+  runHintSelection(state);
 }
 
 function initThreeStlDesigner({
