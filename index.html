@@ -99,9 +99,11 @@
       gap: 12px;
     }
 
-    .hint-tuning-card__title {
+    .hint-tuning-card__title,
+    .processing-steps__title {
       margin: 0;
       font-size: clamp(1.35rem, 2.5vw, 1.6rem);
+      font-weight: 700;
     }
 
     .hint-tuning-card__toggle {
@@ -346,12 +348,12 @@
 
       <section class="hint-tuning-card" id="hint-tuning-card" aria-labelledby="tuning-heading">
         <div class="hint-tuning-card__header">
-          <h2 id="tuning-heading" class="hint-tuning-card__title">2. Hint Tuning Parameters</h2>
-          <button type="button" class="hint-tuning-card__toggle" id="hint-tuning-toggle" aria-controls="hint-tuning-content">
-            Hide details
+          <h2 id="tuning-heading" class="hint-tuning-card__title">Hint Tuning Parameters</h2>
+          <button type="button" class="hint-tuning-card__toggle" id="hint-tuning-toggle" aria-controls="hint-tuning-content" aria-expanded="false">
+            Show details
           </button>
         </div>
-        <div id="hint-tuning-content" class="hint-tuning-card__content" data-expanded="true" role="group" aria-describedby="tuning-heading">
+        <div id="hint-tuning-content" class="hint-tuning-card__content" data-expanded="false" role="group" aria-describedby="tuning-heading">
           <p class="hint-tuning-card__description">Use these sliders to guide hint-based selections toward the object you care about.</p>
           <div class="tuning-grid">
           <div class="tuning-field">
