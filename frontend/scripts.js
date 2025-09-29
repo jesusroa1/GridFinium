@@ -25,7 +25,7 @@ const HINT_TUNING_DEFAULTS = Object.freeze({
   cannyHighThreshold: 180,
   kernelSize: 3,
   minAreaRatio: 0.0002,
-  showProcessingSteps: false,
+  showProcessingSteps: true,
 });
 
 const HINT_TUNING_INPUT_IDS = Object.freeze({
@@ -427,14 +427,13 @@ function createStepRenderer(container) {
 
   const section = document.createElement('section');
   section.className = 'processing-steps';
-  section.hidden = true;
 
   const header = document.createElement('div');
   header.className = 'processing-steps__header';
 
   const title = document.createElement('h3');
   title.className = 'processing-steps__title';
-  title.textContent = 'Processing Steps';
+  title.textContent = 'Paper Processing Steps';
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -506,10 +505,17 @@ function createStepRenderer(container) {
   return {
     renderStep,
     setVisible: (visible) => {
-      section.hidden = !visible;
-      if (visible) {
+      section.hidden = false;
+      toggle.disabled = !visible;
+      section.classList.toggle('processing-steps--disabled', !visible);
+      if (!visible) {
+        expanded = false;
+        list.style.display = 'none';
+      } else {
+        list.style.display = '';
         requestAnimationFrame(syncListStyles);
       }
+      syncToggleState();
     },
     setExpanded: (nextExpanded) => {
       expanded = Boolean(nextExpanded);
@@ -723,6 +729,14 @@ function ensureProcessingStyles() {
     }
     .processing-steps__toggle:hover {
       background: #4338ca;
+    }
+    .processing-steps--disabled .processing-steps__toggle {
+      opacity: 0.6;
+      cursor: not-allowed;
+      background: #9ca3af;
+    }
+    .processing-steps--disabled .processing-steps__toggle:hover {
+      background: #9ca3af;
     }
     .processing-steps__list {
       display: grid;
@@ -1219,11 +1233,40 @@ function setupTabs() {
 }
 
 function setupHintTuningControls() {
+  const tuningContent = document.getElementById('hint-tuning-content');
+  const tuningToggle = document.getElementById('hint-tuning-toggle');
+
   const lowInput = document.getElementById(HINT_TUNING_INPUT_IDS.low);
   const highInput = document.getElementById(HINT_TUNING_INPUT_IDS.high);
   const kernelInput = document.getElementById(HINT_TUNING_INPUT_IDS.kernel);
   const minAreaInput = document.getElementById(HINT_TUNING_INPUT_IDS.minArea);
   const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
+
+  if (tuningContent && tuningToggle) {
+    let tuningExpanded = true;
+
+    const syncTuningContent = () => {
+      tuningContent.dataset.expanded = tuningExpanded ? 'true' : 'false';
+      tuningContent.setAttribute('aria-hidden', String(!tuningExpanded));
+      tuningToggle.setAttribute('aria-expanded', String(tuningExpanded));
+
+      if (tuningExpanded) {
+        tuningContent.style.maxHeight = `${tuningContent.scrollHeight}px`;
+      } else {
+        tuningContent.style.maxHeight = '0px';
+      }
+
+      tuningToggle.textContent = tuningExpanded ? 'Hide details' : 'Show details';
+    };
+
+    tuningToggle.addEventListener('click', () => {
+      tuningExpanded = !tuningExpanded;
+      syncTuningContent();
+    });
+
+    syncTuningContent();
+    requestAnimationFrame(syncTuningContent);
+  }
 
   if (!lowInput || !highInput || !kernelInput || !minAreaInput || !showStepsInput) return;
 
