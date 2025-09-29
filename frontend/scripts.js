@@ -512,7 +512,7 @@ function createStepRenderer(container, options = {}) {
   syncToggleState();
   updateSectionVisibility();
 
-  const renderStep = (label, mat, modifier) => {
+  const renderStep = (label, mat, modifier, stepOptions = {}) => {
     const wrapper = document.createElement('figure');
     wrapper.className = 'processing-step';
     if (modifier) wrapper.classList.add(modifier);
@@ -528,6 +528,14 @@ function createStepRenderer(container, options = {}) {
     list.appendChild(wrapper);
 
     renderMatOnCanvas(mat, canvas);
+
+    if (Array.isArray(stepOptions.overlayPolygon) && stepOptions.overlayPolygon.length >= 3) {
+      drawNormalizedPolygonOnCanvas(canvas, stepOptions.overlayPolygon, {
+        fillStyle: stepOptions.overlayFill,
+        strokeStyle: stepOptions.overlayStroke,
+        lineWidth: stepOptions.overlayLineWidth,
+      });
+    }
 
     updateSectionVisibility();
     syncListStyles();
@@ -1044,45 +1052,100 @@ function clearSelectionHighlight(state) {
   state.selectionPath.setAttribute('points', '');
 }
 
-function updateSelectionHighlight(state, contour, renderInfo) {
+function updateSelectionHighlight(state, contour, renderInfo, normalizedOverride) {
   if (!state?.selectionPath) {
     if (contour) contour.delete();
     return;
   }
 
-  if (!contour || !renderInfo) {
-    if (contour) contour.delete();
-    clearSelectionHighlight(state);
-    return;
+  let normalizedPoints = Array.isArray(normalizedOverride) ? normalizedOverride : null;
+
+  if ((!normalizedPoints || normalizedPoints.length < 3) && contour && renderInfo) {
+    normalizedPoints = normalizedPointsFromContour(contour, renderInfo);
   }
 
-  const normalizedPoints = normalizedPointsFromContour(contour, renderInfo);
-  contour.delete();
+  if (contour) {
+    contour.delete();
+  }
 
-  if (normalizedPoints.length < 3) {
+  if (!normalizedPoints || normalizedPoints.length < 3) {
     clearSelectionHighlight(state);
     return;
   }
 
   const pointString = normalizedPoints
-    .map((point) => `${(point.x * OVERLAY_COORDINATE_SCALE).toFixed(2)},${(point.y * OVERLAY_COORDINATE_SCALE).toFixed(2)}`)
+    .map((point) => {
+      const x = clamp(point.x, 0, 1) * OVERLAY_COORDINATE_SCALE;
+      const y = clamp(point.y, 0, 1) * OVERLAY_COORDINATE_SCALE;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
     .join(' ');
 
   state.selectionPath.setAttribute('points', pointString);
   state.selectionPath.dataset.visible = 'true';
 }
 
-function normalizedPointsFromContour(contour, renderInfo) {
-  if (!contour || !renderInfo) return [];
+function normalizedPointsFromContour(contour, dimensions) {
+  if (!contour || !dimensions) return [];
+
+  const width = Number.isFinite(dimensions.originalWidth) && dimensions.originalWidth > 0
+    ? dimensions.originalWidth
+    : (Number.isFinite(dimensions.displayWidth) && dimensions.displayWidth > 0 ? dimensions.displayWidth : null);
+  const height = Number.isFinite(dimensions.originalHeight) && dimensions.originalHeight > 0
+    ? dimensions.originalHeight
+    : (Number.isFinite(dimensions.displayHeight) && dimensions.displayHeight > 0 ? dimensions.displayHeight : null);
+
+  if (!width || !height) return [];
 
   const coords = contour.data32S;
   const points = [];
   for (let i = 0; i < coords.length; i += 2) {
-    const x = clamp(coords[i] / renderInfo.originalWidth, 0, 1);
-    const y = clamp(coords[i + 1] / renderInfo.originalHeight, 0, 1);
+    const x = clamp(coords[i] / width, 0, 1);
+    const y = clamp(coords[i + 1] / height, 0, 1);
     points.push({ x, y });
   }
   return points;
+}
+
+function drawNormalizedPolygonOnCanvas(canvas, polygon, options = {}) {
+  if (!canvas || !Array.isArray(polygon) || polygon.length < 3) return;
+
+  const context = canvas.getContext('2d');
+  if (!context) return;
+
+  const fillStyle = options.fillStyle ?? 'rgba(236, 72, 153, 0.26)';
+  const strokeStyle = options.strokeStyle ?? '#ec4899';
+  const lineWidth = Number.isFinite(options.lineWidth) ? options.lineWidth : 4;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  if (!width || !height) return;
+
+  context.save();
+  context.beginPath();
+  polygon.forEach((point, index) => {
+    const x = clamp(point.x, 0, 1) * width;
+    const y = clamp(point.y, 0, 1) * height;
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.closePath();
+
+  if (fillStyle) {
+    context.fillStyle = fillStyle;
+    context.fill();
+  }
+
+  if (strokeStyle && lineWidth > 0) {
+    context.lineWidth = lineWidth;
+    context.strokeStyle = strokeStyle;
+    context.stroke();
+  }
+
+  context.restore();
 }
 
 function prepareHintStepRenderer() {
@@ -1095,8 +1158,8 @@ function prepareHintStepRenderer() {
 
   activeHintProcessingSteps.setVisible(Boolean(hintTuningState.showProcessingSteps));
 
-  return (label, mat, modifier) => {
-    activeHintProcessingSteps.renderStep(label, mat, modifier);
+  return (label, mat, modifier, stepOptions) => {
+    activeHintProcessingSteps.renderStep(label, mat, modifier, stepOptions);
   };
 }
 
@@ -1105,11 +1168,17 @@ function runHintSelection(state) {
   if (!state || !state.displayInfo || !state.lastHintPixel || !activeImageMat) return;
 
   const showStep = prepareHintStepRenderer();
-  const contour = findContourAtPoint(activeImageMat, state.lastHintPixel, showStep);
-  updateSelectionHighlight(state, contour, state.displayInfo);
+  const result = findContourAtPoint(activeImageMat, state.lastHintPixel, showStep, state.displayInfo);
+  if (!result) {
+    updateSelectionHighlight(state, null, state.displayInfo);
+    return;
+  }
+
+  const { contour, normalizedPoints } = result;
+  updateSelectionHighlight(state, contour, state.displayInfo, normalizedPoints);
 }
 
-function findContourAtPoint(sourceMat, point, showStep) {
+function findContourAtPoint(sourceMat, point, showStep, displayInfo) {
   if (!sourceMat) return null;
 
   const renderStep = typeof showStep === 'function' ? showStep : null;
@@ -1204,13 +1273,26 @@ function findContourAtPoint(sourceMat, point, showStep) {
     selected = approx;
   }
 
+  let normalizedPoints = [];
+  if (selected) {
+    normalizedPoints = normalizedPointsFromContour(selected, displayInfo || {
+      originalWidth: sourceMat.cols,
+      originalHeight: sourceMat.rows,
+    });
+  }
+
   if (renderStep && selected) {
     const selectionDisplay = sourceMat.clone();
     const selectionVector = new cv.MatVector();
     selectionVector.push_back(selected);
     cv.drawContours(selectionDisplay, selectionVector, -1, new cv.Scalar(236, 72, 153, 255), 4, cv.LINE_AA);
     selectionVector.delete();
-    renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection');
+    renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection', {
+      overlayPolygon: normalizedPoints,
+      overlayFill: 'rgba(236, 72, 153, 0.26)',
+      overlayStroke: '#ec4899',
+      overlayLineWidth: 4,
+    });
     selectionDisplay.delete();
   }
 
@@ -1223,7 +1305,9 @@ function findContourAtPoint(sourceMat, point, showStep) {
   contours.delete();
   hierarchy.delete();
 
-  return selected;
+  if (!selected) return null;
+
+  return { contour: selected, normalizedPoints };
 }
 
 function getHintTuningConfig() {
