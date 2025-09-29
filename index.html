@@ -81,22 +81,63 @@
       animation: fade-in 180ms ease;
     }
 
-    .tuning-panel {
+    .hint-tuning-card {
       margin-top: 36px;
-      padding: 20px;
-      border-radius: 16px;
-      border: 1px solid rgba(99, 102, 241, 0.18);
-      background: linear-gradient(135deg, #f8fafc, #eef2ff);
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      background: #ffffff;
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
     }
 
-    .tuning-panel h2 {
-      margin-top: 0;
-      margin-bottom: 12px;
+    .hint-tuning-card__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 20px;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      gap: 12px;
+    }
+
+    .hint-tuning-card__title {
+      margin: 0;
       font-size: clamp(1.35rem, 2.5vw, 1.6rem);
     }
 
-    .tuning-panel p {
+    .hint-tuning-card__toggle {
+      border: none;
+      background: #4f46e5;
+      color: #ffffff;
+      padding: 8px 18px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    .hint-tuning-card__toggle:hover {
+      background: #4338ca;
+      transform: translateY(-1px);
+    }
+
+    .hint-tuning-card__toggle:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .hint-tuning-card__content {
+      padding: 0 20px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.3s ease, padding 0.2s ease;
+    }
+
+    .hint-tuning-card__content[data-expanded="true"] {
+      padding: 20px;
+    }
+
+    .hint-tuning-card__description {
       margin-top: 0;
       margin-bottom: 18px;
       color: #475569;
@@ -303,10 +344,16 @@
       <input type="file" accept=".jpg,.jpeg,.png" id="file-upload" name="file-upload">
       <div id="preview"></div>
 
-      <section class="tuning-panel" aria-labelledby="tuning-heading">
-        <h2 id="tuning-heading">2. Tuning Parameters</h2>
-        <p>Use these sliders to guide hint-based selections toward the object you care about.</p>
-        <div class="tuning-grid" role="group" aria-describedby="tuning-heading">
+      <section class="hint-tuning-card" id="hint-tuning-card" aria-labelledby="tuning-heading">
+        <div class="hint-tuning-card__header">
+          <h2 id="tuning-heading" class="hint-tuning-card__title">2. Hint Tuning Parameters</h2>
+          <button type="button" class="hint-tuning-card__toggle" id="hint-tuning-toggle" aria-controls="hint-tuning-content">
+            Hide details
+          </button>
+        </div>
+        <div id="hint-tuning-content" class="hint-tuning-card__content" data-expanded="true" role="group" aria-describedby="tuning-heading">
+          <p class="hint-tuning-card__description">Use these sliders to guide hint-based selections toward the object you care about.</p>
+          <div class="tuning-grid">
           <div class="tuning-field">
             <label for="hint-threshold-low">Canny low threshold</label>
             <input type="number" id="hint-threshold-low" name="hint-threshold-low" min="0" max="255" step="1">
@@ -328,10 +375,11 @@
             <p class="tuning-note">Ignores shapes below this percentage of the full image. Reduce it to keep petite selections.</p>
           </div>
         </div>
-        <label class="tuning-checkbox" for="hint-show-steps">
-          <input type="checkbox" id="hint-show-steps" name="hint-show-steps">
-          <span>Display processing steps while outlining</span>
-        </label>
+          <label class="tuning-checkbox" for="hint-show-steps">
+            <input type="checkbox" id="hint-show-steps" name="hint-show-steps">
+            <span>Display paper processing steps while outlining</span>
+          </label>
+        </div>
       </section>
     </section>
 
