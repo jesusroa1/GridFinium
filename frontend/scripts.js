@@ -20,6 +20,22 @@ const THREE_CDN_SOURCES = Object.freeze([
 let threeLoaderPromise = null;
 const OVERLAY_COORDINATE_SCALE = 1000;
 
+const HINT_TUNING_DEFAULTS = Object.freeze({
+  cannyLowThreshold: 60,
+  cannyHighThreshold: 180,
+  kernelSize: 3,
+  minAreaRatio: 0.0002,
+  showProcessingSteps: false,
+});
+
+const HINT_TUNING_INPUT_IDS = Object.freeze({
+  low: 'hint-threshold-low',
+  high: 'hint-threshold-high',
+  kernel: 'hint-kernel-size',
+  minArea: 'hint-min-area',
+  showSteps: 'hint-show-steps',
+});
+
 const POLL_INTERVAL_MS = 50;
 // Only keep the top three contours so we avoid rendering dozens of shapes.
 const MAX_DISPLAY_CONTOURS = 3;
@@ -35,6 +51,9 @@ const cvReady = waitForOpenCv();
 let activePreviewToken = 0;
 let activeImageMat = null;
 const overlayStateMap = new WeakMap();
+let activeOverlayElement = null;
+let activeProcessingSteps = null;
+let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
@@ -45,6 +64,7 @@ if (fileInput && previewContainer) {
 }
 
 setupTabs();
+setupHintTuningControls();
 
 const stlDesignerOptions = {
   viewerId: 'stl-viewer',
@@ -84,6 +104,8 @@ async function processImageFromSource(imageSrc) {
   const sessionId = ++activePreviewToken;
 
   previewContainer.replaceChildren();
+  activeOverlayElement = null;
+  activeProcessingSteps = null;
 
   const {
     heading: resultHeading,
@@ -92,7 +114,9 @@ async function processImageFromSource(imageSrc) {
   } = createPreviewResultSection(previewContainer);
 
   const imageElement = new Image();
-  const appendStep = createStepRenderer(previewContainer);
+  const stepControls = createStepRenderer(previewContainer);
+  activeProcessingSteps = stepControls;
+  syncProcessingStepsVisibility();
   const renderStep = (label, mat, modifier, renderOptions) => {
     if (sessionId !== activePreviewToken) return;
     if (modifier === 'step-outlined') {
@@ -100,7 +124,7 @@ async function processImageFromSource(imageSrc) {
       renderMatOnCanvas(mat, resultCanvas, renderOptions);
       if (sessionId !== activePreviewToken) return;
     }
-    appendStep(label, mat, modifier);
+    stepControls.renderStep(label, mat, modifier);
   };
 
   await loadImage(imageElement, imageSrc);
@@ -382,6 +406,7 @@ function createStepRenderer(container) {
 
   const section = document.createElement('section');
   section.className = 'processing-steps';
+  section.hidden = true;
 
   const header = document.createElement('div');
   header.className = 'processing-steps__header';
@@ -431,7 +456,7 @@ function createStepRenderer(container) {
 
   syncToggleState();
 
-  return (label, mat, modifier) => {
+  const renderStep = (label, mat, modifier) => {
     const wrapper = document.createElement('figure');
     wrapper.className = 'processing-step';
     if (modifier) wrapper.classList.add(modifier);
@@ -452,6 +477,20 @@ function createStepRenderer(container) {
       // Keep the transition smooth as new steps are added.
       requestAnimationFrame(syncListStyles);
     }
+  };
+
+  return {
+    renderStep,
+    setVisible: (visible) => {
+      section.hidden = !visible;
+      if (visible) {
+        requestAnimationFrame(syncListStyles);
+      }
+    },
+    setExpanded: (nextExpanded) => {
+      expanded = Boolean(nextExpanded);
+      syncToggleState();
+    },
   };
 }
 
@@ -694,8 +733,11 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
     displayInfo: renderInfo || null,
     selectionPath: null,
     hintPoint: null,
+    lastHintPixel: null,
+    lastHintNormalized: null,
   };
   overlayStateMap.set(overlay, state);
+  activeOverlayElement = overlay;
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('preview-result__svg');
@@ -844,6 +886,7 @@ function handleOverlayClick(event) {
     y: clamp(Math.round(displayY * scaleY), 0, Math.max(0, originalHeight - 1)),
   };
 
+  state.lastHintPixel = { ...targetPoint };
   const contour = findContourAtPoint(activeImageMat, targetPoint);
   updateSelectionHighlight(state, contour, state.displayInfo);
 }
@@ -854,6 +897,7 @@ function updateHintPoint(state, normalizedX, normalizedY) {
   state.hintPoint.style.left = `${(normalizedX * 100).toFixed(2)}%`;
   state.hintPoint.style.top = `${(normalizedY * 100).toFixed(2)}%`;
   state.hintPoint.dataset.visible = 'true';
+  state.lastHintNormalized = { x: normalizedX, y: normalizedY };
 }
 
 function clearSelectionHighlight(state) {
@@ -906,6 +950,7 @@ function normalizedPointsFromContour(contour, renderInfo) {
 function findContourAtPoint(sourceMat, point) {
   if (!sourceMat) return null;
 
+  const tuning = getHintTuningConfig();
   const gray = new cv.Mat();
   cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
 
@@ -913,9 +958,13 @@ function findContourAtPoint(sourceMat, point) {
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
   const edges = new cv.Mat();
-  cv.Canny(blurred, edges, 60, 180);
+  // When users drop a hint we do a separate pass to highlight the shape around
+  // that point. The thresholds and morphology settings are sourced from the
+  // interactive tuning panel so you can steer which edges survive long enough
+  // to form a contour.
+  cv.Canny(blurred, edges, tuning.cannyLowThreshold, tuning.cannyHighThreshold);
 
-  const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+  const kernel = cv.Mat.ones(tuning.kernelSize, tuning.kernelSize, cv.CV_8U);
   cv.dilate(edges, edges, kernel);
   cv.erode(edges, edges, kernel);
   kernel.delete();
@@ -924,7 +973,7 @@ function findContourAtPoint(sourceMat, point) {
   const hierarchy = new cv.Mat();
   cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-  const minArea = sourceMat.rows * sourceMat.cols * 0.0002;
+  const minArea = sourceMat.rows * sourceMat.cols * tuning.minAreaRatio;
   const testPoint = new cv.Point(point.x, point.y);
   let insideContour = null;
   let insideArea = Number.POSITIVE_INFINITY;
@@ -984,6 +1033,31 @@ function findContourAtPoint(sourceMat, point) {
   hierarchy.delete();
 
   return selected;
+}
+
+function getHintTuningConfig() {
+  const lowRaw = Math.round(hintTuningState.cannyLowThreshold);
+  const highRaw = Math.round(hintTuningState.cannyHighThreshold);
+  const low = clamp(Number.isFinite(lowRaw) ? lowRaw : HINT_TUNING_DEFAULTS.cannyLowThreshold, 0, 255);
+  const highCandidate = clamp(Number.isFinite(highRaw) ? highRaw : HINT_TUNING_DEFAULTS.cannyHighThreshold, 0, 255);
+  const high = Math.max(low, highCandidate);
+
+  let kernelCandidate = Math.round(hintTuningState.kernelSize);
+  if (!Number.isFinite(kernelCandidate)) kernelCandidate = HINT_TUNING_DEFAULTS.kernelSize;
+  kernelCandidate = clamp(kernelCandidate, 1, 31);
+  if (kernelCandidate % 2 === 0) {
+    kernelCandidate = kernelCandidate === 31 ? kernelCandidate - 1 : kernelCandidate + 1;
+  }
+
+  const minAreaCandidate = Number(hintTuningState.minAreaRatio);
+  const minAreaRatio = Math.max(0, Number.isFinite(minAreaCandidate) ? minAreaCandidate : HINT_TUNING_DEFAULTS.minAreaRatio);
+
+  return {
+    cannyLowThreshold: low,
+    cannyHighThreshold: clamp(high, 0, 255),
+    kernelSize: kernelCandidate,
+    minAreaRatio,
+  };
 }
 
 function setActiveImageMat(mat) {
@@ -1067,6 +1141,120 @@ function setupTabs() {
       if (targetId) activateTab(targetId);
     });
   });
+}
+
+function setupHintTuningControls() {
+  const lowInput = document.getElementById(HINT_TUNING_INPUT_IDS.low);
+  const highInput = document.getElementById(HINT_TUNING_INPUT_IDS.high);
+  const kernelInput = document.getElementById(HINT_TUNING_INPUT_IDS.kernel);
+  const minAreaInput = document.getElementById(HINT_TUNING_INPUT_IDS.minArea);
+  const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
+
+  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !showStepsInput) return;
+
+  const syncInputsFromState = () => {
+    const config = getHintTuningConfig();
+    lowInput.value = config.cannyLowThreshold;
+    highInput.value = config.cannyHighThreshold;
+    highInput.min = String(config.cannyLowThreshold);
+    kernelInput.value = config.kernelSize;
+    const percentValue = hintTuningState.minAreaRatio * 100;
+    let formattedPercent;
+    if (!Number.isFinite(percentValue)) {
+      formattedPercent = (HINT_TUNING_DEFAULTS.minAreaRatio * 100).toString();
+    } else if (percentValue === 0) {
+      formattedPercent = '0';
+    } else {
+      formattedPercent = percentValue.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    }
+    minAreaInput.value = formattedPercent;
+    showStepsInput.checked = Boolean(hintTuningState.showProcessingSteps);
+  };
+
+  syncInputsFromState();
+
+  lowInput.addEventListener('change', () => {
+    const raw = Number(lowInput.value);
+    if (!Number.isFinite(raw)) {
+      syncInputsFromState();
+      return;
+    }
+
+    applyHintTuningState({ cannyLowThreshold: raw });
+    syncInputsFromState();
+  });
+
+  highInput.addEventListener('change', () => {
+    const raw = Number(highInput.value);
+    if (!Number.isFinite(raw)) {
+      syncInputsFromState();
+      return;
+    }
+
+    applyHintTuningState({ cannyHighThreshold: raw });
+    syncInputsFromState();
+  });
+
+  kernelInput.addEventListener('change', () => {
+    const raw = Number(kernelInput.value);
+    if (!Number.isFinite(raw)) {
+      syncInputsFromState();
+      return;
+    }
+
+    applyHintTuningState({ kernelSize: raw });
+    syncInputsFromState();
+  });
+
+  minAreaInput.addEventListener('change', () => {
+    const raw = Number(minAreaInput.value);
+    if (!Number.isFinite(raw) || raw < 0) {
+      syncInputsFromState();
+      return;
+    }
+
+    applyHintTuningState({ minAreaRatio: raw / 100 });
+    syncInputsFromState();
+  });
+
+  showStepsInput.addEventListener('change', () => {
+    hintTuningState.showProcessingSteps = showStepsInput.checked;
+    syncProcessingStepsVisibility();
+  });
+}
+
+function applyHintTuningState(partial, options = {}) {
+  hintTuningState = { ...hintTuningState, ...partial };
+
+  const normalized = getHintTuningConfig();
+  hintTuningState = {
+    ...hintTuningState,
+    cannyLowThreshold: normalized.cannyLowThreshold,
+    cannyHighThreshold: normalized.cannyHighThreshold,
+    kernelSize: normalized.kernelSize,
+    minAreaRatio: normalized.minAreaRatio,
+  };
+
+  if (options.rerunSelection !== false) {
+    rerunHintSelection();
+  }
+
+  return normalized;
+}
+
+function syncProcessingStepsVisibility() {
+  if (!activeProcessingSteps) return;
+  activeProcessingSteps.setVisible(Boolean(hintTuningState.showProcessingSteps));
+}
+
+function rerunHintSelection() {
+  if (!activeOverlayElement || !activeImageMat) return;
+
+  const state = overlayStateMap.get(activeOverlayElement);
+  if (!state || !state.displayInfo || !state.lastHintPixel) return;
+
+  const contour = findContourAtPoint(activeImageMat, state.lastHintPixel);
+  updateSelectionHighlight(state, contour, state.displayInfo);
 }
 
 function initThreeStlDesigner({
