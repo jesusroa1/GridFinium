@@ -128,6 +128,9 @@ Several numbers control which contour wins once a hint is supplied:
 - **Minimum contour area (`imageArea × 0.0001`)** filters out tiny fragments.
   Reduce this ratio if the coaster is still ignored, or raise it to focus only
   on large objects such as the sheet of paper.
+- **Paper similarity tolerance (~5%)** prevents the known paper outline from
+  winning the hint search. Increase it if the page still sneaks through, or
+  lower it when nearby objects have a similar footprint to the paper.
 
 Adjusting these values in `findContourAtPoint` inside `scripts.js` lets you
 fine-tune what is selected after a hint. Try lowering the thresholds first, and
