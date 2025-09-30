@@ -376,11 +376,16 @@
             <input type="number" id="hint-min-area" name="hint-min-area" min="0" max="5" step="0.01">
             <p class="tuning-note">Ignores shapes below this percentage of the full image. Reduce it to keep petite selections.</p>
           </div>
+          <div class="tuning-field">
+            <label for="hint-paper-tolerance">Paper similarity tolerance (%)</label>
+            <input type="number" id="hint-paper-tolerance" name="hint-paper-tolerance" min="0" max="100" step="0.01">
+            <p class="tuning-note">Reject hint contours whose size is within this percent of the paper outline. Raise it if the paper keeps winning.</p>
+          </div>
         </div>
-          <label class="tuning-checkbox" for="hint-show-steps">
-            <input type="checkbox" id="hint-show-steps" name="hint-show-steps">
-            <span>Display paper processing steps while outlining</span>
-          </label>
+        <label class="tuning-checkbox" for="hint-show-steps">
+          <input type="checkbox" id="hint-show-steps" name="hint-show-steps">
+          <span>Display paper processing steps while outlining</span>
+        </label>
         </div>
       </section>
     </section>

@@ -25,6 +25,7 @@ const HINT_TUNING_DEFAULTS = Object.freeze({
   cannyHighThreshold: 120,
   kernelSize: 5,
   minAreaRatio: 0.0001,
+  paperExclusionTolerance: 0.05,
   showProcessingSteps: true,
 });
 
@@ -33,6 +34,7 @@ const HINT_TUNING_INPUT_IDS = Object.freeze({
   high: 'hint-threshold-high',
   kernel: 'hint-kernel-size',
   minArea: 'hint-min-area',
+  paperTolerance: 'hint-paper-tolerance',
   showSteps: 'hint-show-steps',
 });
 
@@ -1344,6 +1346,10 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     baseCleanup = null;
   }
   const tuning = getHintTuningConfig();
+  const paperTolerance = Math.max(0, Number(tuning.paperExclusionTolerance) || 0);
+  const paperMetrics = paperTolerance > 0 && normalizedPaperOutline
+    ? measureNormalizedOutlineMetrics(normalizedPaperOutline, sourceMat, displayInfo)
+    : null;
   const gray = new cv.Mat();
   cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
   if (renderStep) {
@@ -1394,6 +1400,21 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     if (area < minArea) {
       contour.delete();
       continue;
+    }
+
+    if (paperMetrics) {
+      const areaDifference = paperMetrics.area > 0
+        ? Math.abs(area - paperMetrics.area) / paperMetrics.area
+        : Number.POSITIVE_INFINITY;
+      const perimeter = cv.arcLength(contour, true);
+      const perimeterDifference = paperMetrics.perimeter > 0
+        ? Math.abs(perimeter - paperMetrics.perimeter) / paperMetrics.perimeter
+        : Number.POSITIVE_INFINITY;
+
+      if (areaDifference <= paperTolerance && perimeterDifference <= paperTolerance) {
+        contour.delete();
+        continue;
+      }
     }
 
     const distance = cv.pointPolygonTest(contour, testPoint, true);
@@ -1472,8 +1493,24 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   return { contour: selected, normalizedPoints };
 }
 
-function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
-  // Create a display-friendly copy of the image that hides everything outside the paper polygon.
+function measureNormalizedOutlineMetrics(normalizedOutline, sourceMat, dimensions) {
+  // Convert the normalized paper outline back into pixel coordinates so we can
+  // compare its size against candidate hint contours.
+  const polygon = createPolygonMatFromNormalizedOutline(normalizedOutline, sourceMat, dimensions);
+  if (!polygon) return null;
+
+  const area = cv.contourArea(polygon);
+  const perimeter = cv.arcLength(polygon, true);
+  polygon.delete();
+
+  if (!Number.isFinite(area) || area <= 0 || !Number.isFinite(perimeter) || perimeter <= 0) {
+    return null;
+  }
+
+  return { area, perimeter };
+}
+
+function createPolygonMatFromNormalizedOutline(normalizedOutline, sourceMat, dimensions) {
   if (!sourceMat || !Array.isArray(normalizedOutline) || normalizedOutline.length < 3) return null;
 
   const hasWidth = dimensions && Number.isFinite(dimensions.originalWidth) && dimensions.originalWidth > 0;
@@ -1483,8 +1520,8 @@ function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
 
   if (!baseWidth || !baseHeight) return null;
 
-  const scaleX = baseWidth ? sourceMat.cols / baseWidth : 1;
-  const scaleY = baseHeight ? sourceMat.rows / baseHeight : 1;
+  const scaleX = sourceMat.cols / baseWidth;
+  const scaleY = sourceMat.rows / baseHeight;
   const maxX = Math.max(0, baseWidth - 1);
   const maxY = Math.max(0, baseHeight - 1);
 
@@ -1502,7 +1539,13 @@ function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
 
   if (pointData.length < 6) return null;
 
-  const polygon = cv.matFromArray(pointData.length / 2, 1, cv.CV_32SC2, pointData);
+  return cv.matFromArray(pointData.length / 2, 1, cv.CV_32SC2, Int32Array.from(pointData));
+}
+
+function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
+  // Create a display-friendly copy of the image that hides everything outside the paper polygon.
+  const polygon = createPolygonMatFromNormalizedOutline(normalizedOutline, sourceMat, dimensions);
+  if (!polygon) return null;
   const polygons = new cv.MatVector();
   polygons.push_back(polygon);
 
@@ -1542,11 +1585,19 @@ function getHintTuningConfig() {
   const minAreaCandidate = Number(hintTuningState.minAreaRatio);
   const minAreaRatio = Math.max(0, Number.isFinite(minAreaCandidate) ? minAreaCandidate : HINT_TUNING_DEFAULTS.minAreaRatio);
 
+  const paperToleranceCandidate = Number(hintTuningState.paperExclusionTolerance);
+  const paperExclusionTolerance = clamp(
+    Number.isFinite(paperToleranceCandidate) ? paperToleranceCandidate : HINT_TUNING_DEFAULTS.paperExclusionTolerance,
+    0,
+    1,
+  );
+
   return {
     cannyLowThreshold: low,
     cannyHighThreshold: clamp(high, 0, 255),
     kernelSize: kernelCandidate,
     minAreaRatio,
+    paperExclusionTolerance,
   };
 }
 
@@ -1641,6 +1692,7 @@ function setupHintTuningControls() {
   const highInput = document.getElementById(HINT_TUNING_INPUT_IDS.high);
   const kernelInput = document.getElementById(HINT_TUNING_INPUT_IDS.kernel);
   const minAreaInput = document.getElementById(HINT_TUNING_INPUT_IDS.minArea);
+  const paperToleranceInput = document.getElementById(HINT_TUNING_INPUT_IDS.paperTolerance);
   const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
 
   if (tuningContent && tuningToggle) {
@@ -1669,7 +1721,7 @@ function setupHintTuningControls() {
     requestAnimationFrame(syncTuningContent);
   }
 
-  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !showStepsInput) return;
+  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !paperToleranceInput || !showStepsInput) return;
 
   const syncInputsFromState = () => {
     const config = getHintTuningConfig();
@@ -1687,6 +1739,17 @@ function setupHintTuningControls() {
       formattedPercent = percentValue.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
     }
     minAreaInput.value = formattedPercent;
+
+    const tolerancePercent = config.paperExclusionTolerance * 100;
+    let formattedTolerance;
+    if (!Number.isFinite(tolerancePercent)) {
+      formattedTolerance = (HINT_TUNING_DEFAULTS.paperExclusionTolerance * 100).toString();
+    } else if (tolerancePercent === 0) {
+      formattedTolerance = '0';
+    } else {
+      formattedTolerance = tolerancePercent.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    }
+    paperToleranceInput.value = formattedTolerance;
     showStepsInput.checked = Boolean(hintTuningState.showProcessingSteps);
   };
 
@@ -1736,6 +1799,17 @@ function setupHintTuningControls() {
     syncInputsFromState();
   });
 
+  paperToleranceInput.addEventListener('change', () => {
+    const raw = Number(paperToleranceInput.value);
+    if (!Number.isFinite(raw) || raw < 0) {
+      syncInputsFromState();
+      return;
+    }
+
+    applyHintTuningState({ paperExclusionTolerance: raw / 100 });
+    syncInputsFromState();
+  });
+
   showStepsInput.addEventListener('change', () => {
     hintTuningState.showProcessingSteps = showStepsInput.checked;
     syncProcessingStepsVisibility();
@@ -1752,6 +1826,7 @@ function applyHintTuningState(partial, options = {}) {
     cannyHighThreshold: normalized.cannyHighThreshold,
     kernelSize: normalized.kernelSize,
     minAreaRatio: normalized.minAreaRatio,
+    paperExclusionTolerance: normalized.paperExclusionTolerance,
   };
 
   if (options.rerunSelection !== false) {
