@@ -21,11 +21,11 @@ let threeLoaderPromise = null;
 const OVERLAY_COORDINATE_SCALE = 1000;
 
 const HINT_TUNING_DEFAULTS = Object.freeze({
-  cannyLowThreshold: 40,
-  cannyHighThreshold: 120,
+  cannyLowThreshold: 10,
+  cannyHighThreshold: 50,
   kernelSize: 5,
-  minAreaRatio: 0.0001,
-  paperExclusionTolerance: 0.05,
+  minAreaRatio: 0.00001,
+  paperExclusionTolerance: 0.1,
   showProcessingSteps: true,
 });
 
@@ -1784,6 +1784,9 @@ function setupHintTuningControls() {
     showStepsInput.checked = Boolean(hintTuningState.showProcessingSteps);
   };
 
+  // Ensure the live state starts from the published defaults so the UI always
+  // reflects the expected baseline even if earlier sessions tweaked the values.
+  applyHintTuningState({ ...HINT_TUNING_DEFAULTS }, { rerunSelection: false });
   syncInputsFromState();
 
   lowInput.addEventListener('change', () => {
