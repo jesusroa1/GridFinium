@@ -140,3 +140,16 @@ coaster instead of the entire page.
 You can now experiment with these numbers directly from the **Tuning Parameters**
 panel on the Image Tools tab—no code edits required. Adjust the sliders, click
 the preview again, and watch the hint selection update instantly.
+
+## SVG
+To turn the detected outline into an SVG that is sized for real-world use, we
+compare the paper’s pixel perimeter against the actual letter sheet perimeter.
+
+- **Paper perimeter (pixels):** 9,748.2 px (from the “Top Contour 1” step).
+- **Real paper perimeter:** An 8.5" × 11" page is 215.9 mm by 279.4 mm, so its
+  perimeter is 990.6 mm.
+- **Millimeters per pixel:** 990.6 mm ÷ 9,748.2 px ≈ **0.102 mm/px**.
+
+Multiplying any SVG measurements by `0.102` converts them from detected pixels
+into millimeters, which keeps the exported outline the same size as the original
+piece of paper when you laser-cut or print it.
