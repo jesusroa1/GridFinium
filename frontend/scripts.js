@@ -39,8 +39,8 @@ const HINT_TUNING_INPUT_IDS = Object.freeze({
 });
 
 const POLL_INTERVAL_MS = 50;
-// Only keep the top three contours so we avoid rendering dozens of shapes.
-const MAX_DISPLAY_CONTOURS = 3;
+// Only keep the top five contours so we avoid rendering dozens of shapes.
+const MAX_DISPLAY_CONTOURS = 5;
 // Keep preview canvases to a mobile-friendly size so zooming never tries to render
 // the original multi-megapixel image at full resolution.
 const MAX_DISPLAY_DIMENSION = 1280;
@@ -1385,6 +1385,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
 
   const minArea = sourceMat.rows * sourceMat.cols * tuning.minAreaRatio;
   const testPoint = new cv.Point(point.x, point.y);
+  const topContours = [];
   let insideContour = null;
   let insideArea = Number.POSITIVE_INFINITY;
   let fallbackContour = null;
@@ -1398,11 +1399,13 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       continue;
     }
 
+    const perimeter = cv.arcLength(contour, true);
+    insertTopContour(topContours, contour, area, perimeter);
+
     if (paperMetrics) {
       const areaDifference = paperMetrics.area > 0
         ? Math.abs(area - paperMetrics.area) / paperMetrics.area
         : Number.POSITIVE_INFINITY;
-      const perimeter = cv.arcLength(contour, true);
       const perimeterDifference = paperMetrics.perimeter > 0
         ? Math.abs(perimeter - paperMetrics.perimeter) / paperMetrics.perimeter
         : Number.POSITIVE_INFINITY;
@@ -1429,6 +1432,29 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     }
 
     contour.delete();
+  }
+
+  if (renderStep && topContours.length) {
+    topContours.forEach((entry, index) => {
+      const display = cv.Mat.zeros(sourceMat.rows, sourceMat.cols, cv.CV_8UC3);
+      const single = new cv.MatVector();
+      single.push_back(entry.mat);
+      cv.drawContours(display, single, -1, new cv.Scalar(236, 72, 153, 255), 3, cv.LINE_AA);
+      single.delete();
+      const caption = [
+        `Hint Top Contour ${index + 1}`,
+        `Perimeter: ${entry.perimeter.toFixed(1)} px`,
+        `Area: ${entry.area.toFixed(1)} px²`,
+      ].join('\n');
+      const stepOptions = baseStepOptions ? { ...baseStepOptions } : undefined;
+      renderStep(caption, display, 'step-contour', stepOptions);
+      display.delete();
+      entry.mat.delete();
+    });
+  } else {
+    topContours.forEach((entry) => {
+      entry.mat.delete();
+    });
   }
 
   let selected = insideContour || fallbackContour;
