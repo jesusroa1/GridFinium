@@ -44,6 +44,7 @@ const MAX_DISPLAY_CONTOURS = 5;
 // Keep preview canvases to a mobile-friendly size so zooming never tries to render
 // the original multi-megapixel image at full resolution.
 const MAX_DISPLAY_DIMENSION = 1280;
+const PERIMETER_COMPARISON_EPSILON = 1e-2;
 let processingStepsIdCounter = 0;
 let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
@@ -1411,6 +1412,14 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
         : Number.POSITIVE_INFINITY;
 
       if (areaDifference <= paperTolerance && perimeterDifference <= paperTolerance) {
+        contour.delete();
+        continue;
+      }
+
+      if (
+        paperMetrics.perimeter > 0
+        && perimeter + PERIMETER_COMPARISON_EPSILON >= paperMetrics.perimeter
+      ) {
         contour.delete();
         continue;
       }
