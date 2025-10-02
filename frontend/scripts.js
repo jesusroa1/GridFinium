@@ -27,6 +27,7 @@ const HINT_TUNING_DEFAULTS = Object.freeze({
   minAreaRatio: 0.00001,
   paperExclusionTolerance: 0.1,
   showProcessingSteps: true,
+  enableErodeStep: true,
 });
 
 const HINT_TUNING_INPUT_IDS = Object.freeze({
@@ -36,6 +37,7 @@ const HINT_TUNING_INPUT_IDS = Object.freeze({
   minArea: 'hint-min-area',
   paperTolerance: 'hint-paper-tolerance',
   showSteps: 'hint-show-steps',
+  enableErode: 'hint-enable-erode',
 });
 
 const POLL_INTERVAL_MS = 50;
@@ -1350,9 +1352,13 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   if (renderStep) {
     renderStep('Hint Dilated Edges - cv.dilate()', edges, 'step-edges-dilated', baseStepOptions);
   }
-  cv.erode(edges, edges, kernel);
-  if (renderStep) {
-    renderStep('Hint Refined Edges - cv.erode()', edges, 'step-edges-cleaned', baseStepOptions);
+  if (tuning.enableErodeStep) {
+    cv.erode(edges, edges, kernel);
+    if (renderStep) {
+      renderStep('Hint Refined Edges - cv.erode()', edges, 'step-edges-cleaned', baseStepOptions);
+    }
+  } else if (renderStep) {
+    renderStep('Hint Refined Edges - cv.erode() skipped', edges, 'step-edges-cleaned', baseStepOptions);
   }
   kernel.delete();
 
@@ -1624,12 +1630,15 @@ function getHintTuningConfig() {
     1,
   );
 
+  const enableErodeStep = hintTuningState.enableErodeStep;
+
   return {
     cannyLowThreshold: low,
     cannyHighThreshold: clamp(high, 0, 255),
     kernelSize: kernelCandidate,
     minAreaRatio,
     paperExclusionTolerance,
+    enableErodeStep: enableErodeStep !== undefined ? Boolean(enableErodeStep) : HINT_TUNING_DEFAULTS.enableErodeStep,
   };
 }
 
@@ -1726,6 +1735,7 @@ function setupHintTuningControls() {
   const minAreaInput = document.getElementById(HINT_TUNING_INPUT_IDS.minArea);
   const paperToleranceInput = document.getElementById(HINT_TUNING_INPUT_IDS.paperTolerance);
   const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
+  const erodeInput = document.getElementById(HINT_TUNING_INPUT_IDS.enableErode);
 
   if (tuningContent && tuningToggle) {
     let tuningExpanded = false;
@@ -1753,7 +1763,7 @@ function setupHintTuningControls() {
     requestAnimationFrame(syncTuningContent);
   }
 
-  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !paperToleranceInput || !showStepsInput) return;
+  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !paperToleranceInput || !showStepsInput || !erodeInput) return;
 
   const syncInputsFromState = () => {
     const config = getHintTuningConfig();
@@ -1783,6 +1793,7 @@ function setupHintTuningControls() {
     }
     paperToleranceInput.value = formattedTolerance;
     showStepsInput.checked = Boolean(hintTuningState.showProcessingSteps);
+    erodeInput.checked = Boolean(hintTuningState.enableErodeStep);
   };
 
   // Ensure the live state starts from the published defaults so the UI always
@@ -1849,6 +1860,11 @@ function setupHintTuningControls() {
     hintTuningState.showProcessingSteps = showStepsInput.checked;
     syncProcessingStepsVisibility();
   });
+
+  erodeInput.addEventListener('change', () => {
+    applyHintTuningState({ enableErodeStep: erodeInput.checked });
+    syncInputsFromState();
+  });
 }
 
 function applyHintTuningState(partial, options = {}) {
@@ -1862,6 +1878,7 @@ function applyHintTuningState(partial, options = {}) {
     kernelSize: normalized.kernelSize,
     minAreaRatio: normalized.minAreaRatio,
     paperExclusionTolerance: normalized.paperExclusionTolerance,
+    enableErodeStep: Boolean(normalized.enableErodeStep),
   };
 
   if (options.rerunSelection !== false) {
