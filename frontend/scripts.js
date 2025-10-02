@@ -1450,11 +1450,31 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       single.push_back(entry.mat);
       cv.drawContours(display, single, -1, new cv.Scalar(236, 72, 153, 255), 3, cv.LINE_AA);
       single.delete();
-      const caption = [
+      const captionLines = [
         `Hint Top Contour ${index + 1}`,
         `Perimeter: ${entry.perimeter.toFixed(1)} px`,
         `Area: ${entry.area.toFixed(1)} px²`,
-      ].join('\n');
+      ];
+
+      if (paperMetrics) {
+        const hasPerimeter = Number.isFinite(paperMetrics.perimeter) && paperMetrics.perimeter > 0;
+        const paperPerimeterText = hasPerimeter
+          ? `${paperMetrics.perimeter.toFixed(1)} px`
+          : 'N/A';
+        captionLines.push(`Paper Perimeter: ${paperPerimeterText}`);
+
+        if (hasPerimeter) {
+          const perimeterDifference = ((entry.perimeter - paperMetrics.perimeter) / paperMetrics.perimeter) * 100;
+          const formattedDifference = `${perimeterDifference >= 0 ? '+' : ''}${perimeterDifference.toFixed(1)}%`;
+          captionLines.push(`Perimeter Δ vs Paper: ${formattedDifference}`);
+        } else {
+          captionLines.push('Perimeter Δ vs Paper: N/A');
+        }
+      } else {
+        captionLines.push('Paper Perimeter: N/A', 'Perimeter Δ vs Paper: N/A');
+      }
+
+      const caption = captionLines.join('\n');
       const stepOptions = baseStepOptions ? { ...baseStepOptions } : undefined;
       renderStep(caption, display, 'step-contour', stepOptions);
       display.delete();
