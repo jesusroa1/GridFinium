@@ -1270,85 +1270,61 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     ? paperOutline
     : null;
 
-  let baseDisplayMat = sourceMat;
-  let baseCleanup = null;
+  let workingSource = sourceMat;
+  let cleanupWorkingSource = null;
 
-  if (renderStep && normalizedPaperOutline) {
+  if (normalizedPaperOutline) {
     const masked = buildMaskedDisplayMat(sourceMat, normalizedPaperOutline, displayInfo);
     if (masked) {
-      baseDisplayMat = masked.mat;
-      baseCleanup = masked.cleanup;
+      workingSource = masked.mat;
+      cleanupWorkingSource = masked.cleanup;
     }
-  }
-
-  let sourceForDisplay = baseDisplayMat;
-  let cleanupSourceDisplay = baseCleanup;
-
-  if (renderStep && normalizedHint) {
-    const highlighted = baseDisplayMat.clone();
-
-    const hintLocation = new cv.Point(point.x, point.y);
-    const scaleEstimate = (() => {
-      if (displayInfo && displayInfo.originalWidth && displayInfo.displayWidth) {
-        const scaleX = displayInfo.originalWidth / displayInfo.displayWidth;
-        const scaleY = displayInfo.originalHeight / displayInfo.displayHeight;
-        if (Number.isFinite(scaleX) && Number.isFinite(scaleY) && scaleX > 0 && scaleY > 0) {
-          return Math.max(scaleX, scaleY);
-        }
-      }
-      const maxDimension = Math.max(sourceMat.cols, sourceMat.rows);
-      if (!maxDimension) return 1;
-      const ratio = maxDimension / MAX_DISPLAY_DIMENSION;
-      return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-    })();
-
-    const baseRadius = 5;
-    const outerRadius = Math.max(4, Math.round(baseRadius * scaleEstimate));
-    const innerRadius = Math.max(2, outerRadius - 3);
-    const coreRadius = Math.max(1, Math.round(innerRadius * 0.4));
-
-    // Recreate the layered white/pink/white target used for the interactive hint marker.
-    cv.circle(highlighted, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
-    cv.circle(highlighted, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
-    if (coreRadius < innerRadius) {
-      cv.circle(highlighted, hintLocation, coreRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
-    }
-
-    sourceForDisplay = highlighted;
-    cleanupSourceDisplay = () => {
-      highlighted.delete();
-      if (typeof baseCleanup === 'function') {
-        baseCleanup();
-        baseCleanup = null;
-      }
-    };
-  } else if (!renderStep && typeof baseCleanup === 'function') {
-    // No display step rendered but we created a masked copy, so clean it up now.
-    baseCleanup();
-    baseCleanup = null;
-    sourceForDisplay = sourceMat;
-    cleanupSourceDisplay = null;
   }
 
   if (renderStep) {
-    renderStep('Hint Source - Original Photo', sourceForDisplay, 'step-original', baseStepOptions);
-  }
+    if (normalizedHint) {
+      const highlighted = workingSource.clone();
 
-  if (cleanupSourceDisplay) {
-    cleanupSourceDisplay();
-    cleanupSourceDisplay = null;
-    baseCleanup = null;
-  } else if (typeof baseCleanup === 'function') {
-    baseCleanup();
-    baseCleanup = null;
+      const hintLocation = new cv.Point(point.x, point.y);
+      const scaleEstimate = (() => {
+        if (displayInfo && displayInfo.originalWidth && displayInfo.displayWidth) {
+          const scaleX = displayInfo.originalWidth / displayInfo.displayWidth;
+          const scaleY = displayInfo.originalHeight / displayInfo.displayHeight;
+          if (Number.isFinite(scaleX) && Number.isFinite(scaleY) && scaleX > 0 && scaleY > 0) {
+            return Math.max(scaleX, scaleY);
+          }
+        }
+        const maxDimension = Math.max(workingSource.cols, workingSource.rows);
+        if (!maxDimension) return 1;
+        const ratio = maxDimension / MAX_DISPLAY_DIMENSION;
+        return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+      })();
+
+      const baseRadius = 5;
+      const outerRadius = Math.max(4, Math.round(baseRadius * scaleEstimate));
+      const innerRadius = Math.max(2, outerRadius - 3);
+      const coreRadius = Math.max(1, Math.round(innerRadius * 0.4));
+
+      // Recreate the layered white/pink/white target used for the interactive hint marker.
+      cv.circle(highlighted, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+      cv.circle(highlighted, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
+      if (coreRadius < innerRadius) {
+        cv.circle(highlighted, hintLocation, coreRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
+      }
+
+      renderStep('Hint Source - Original Photo', highlighted, 'step-original', baseStepOptions);
+      highlighted.delete();
+    } else {
+      renderStep('Hint Source - Original Photo', workingSource, 'step-original', baseStepOptions);
+    }
   }
   const tuning = getHintTuningConfig();
   const paperTolerance = Math.max(0, Number(tuning.paperExclusionTolerance) || 0);
   const paperMetrics = paperTolerance > 0 && normalizedPaperOutline
-    ? measureNormalizedOutlineMetrics(normalizedPaperOutline, sourceMat, displayInfo)
+    ? measureNormalizedOutlineMetrics(normalizedPaperOutline, workingSource, displayInfo)
     : null;
   const gray = new cv.Mat();
-  cv.cvtColor(sourceMat, gray, cv.COLOR_RGBA2GRAY);
+  cv.cvtColor(workingSource, gray, cv.COLOR_RGBA2GRAY);
   if (renderStep) {
     renderStep('Hint Grayscale - cv.cvtColor()', gray, 'step-gray', baseStepOptions);
   }
@@ -1384,7 +1360,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   const hierarchy = new cv.Mat();
   cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-  const minArea = sourceMat.rows * sourceMat.cols * tuning.minAreaRatio;
+  const minArea = workingSource.rows * workingSource.cols * tuning.minAreaRatio;
   const testPoint = new cv.Point(point.x, point.y);
   const topContours = [];
   let insideContour = null;
@@ -1445,7 +1421,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
 
   if (renderStep && topContours.length) {
     topContours.forEach((entry, index) => {
-      const display = cv.Mat.zeros(sourceMat.rows, sourceMat.cols, cv.CV_8UC3);
+      const display = cv.Mat.zeros(workingSource.rows, workingSource.cols, cv.CV_8UC3);
       const single = new cv.MatVector();
       single.push_back(entry.mat);
       cv.drawContours(display, single, -1, new cv.Scalar(236, 72, 153, 255), 3, cv.LINE_AA);
@@ -1486,13 +1462,13 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   let normalizedPoints = [];
   if (selected) {
     normalizedPoints = normalizedPointsFromContour(selected, displayInfo || {
-      originalWidth: sourceMat.cols,
-      originalHeight: sourceMat.rows,
+      originalWidth: workingSource.cols,
+      originalHeight: workingSource.rows,
     });
   }
 
   if (renderStep && selected) {
-    const selectionDisplay = sourceMat.clone();
+    const selectionDisplay = workingSource.clone();
     const selectionVector = new cv.MatVector();
     selectionVector.push_back(selected);
     cv.drawContours(selectionDisplay, selectionVector, -1, new cv.Scalar(236, 72, 153, 255), 4, cv.LINE_AA);
@@ -1508,6 +1484,11 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     }
     renderStep('Hint Selection Outline', selectionDisplay, 'step-hint-selection', selectionOptions);
     selectionDisplay.delete();
+  }
+
+  if (typeof cleanupWorkingSource === 'function') {
+    cleanupWorkingSource();
+    cleanupWorkingSource = null;
   }
 
   if (insideContour) insideContour.delete();
