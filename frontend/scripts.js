@@ -50,6 +50,8 @@ const OVERLAY_COORDINATE_SCALE = 1000;
 const HINT_TUNING_DEFAULTS = Object.freeze({
   cannyLowThreshold: 10,
   cannyHighThreshold: 50,
+  enableAutoCanny: true,
+  autoCannySigma: 0.33,
   kernelSize: 5,
   minAreaRatio: 0.00001,
   paperExclusionTolerance: 0.1,
@@ -1507,14 +1509,32 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred', baseStepOptions);
   }
 
-  const edges = new cv.Mat();
+  let edges;
+  let cannyLow = tuning.cannyLowThreshold;
+  let cannyHigh = tuning.cannyHighThreshold;
   // When users drop a hint we do a separate pass to highlight the shape around
   // that point. The thresholds and morphology settings are sourced from the
   // interactive tuning panel so you can steer which edges survive long enough
   // to form a contour.
-  cv.Canny(blurred, edges, tuning.cannyLowThreshold, tuning.cannyHighThreshold);
+  if (tuning.enableAutoCanny) {
+    const result = autoCanny(blurred, tuning.autoCannySigma);
+    edges = result.edges;
+    cannyLow = result.lower;
+    cannyHigh = result.upper;
+  } else {
+    edges = new cv.Mat();
+    cv.Canny(blurred, edges, tuning.cannyLowThreshold, tuning.cannyHighThreshold);
+  }
   if (renderStep) {
-    renderStep('Hint Edge Map - cv.Canny()', edges, 'step-edges-raw', baseStepOptions);
+    const formatThreshold = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        const formatted = value.toFixed(1);
+        return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted;
+      }
+      return value;
+    };
+    const caption = `Hint Edge Map - Canny\nlow=${formatThreshold(cannyLow)}, high=${formatThreshold(cannyHigh)}`;
+    renderStep(caption, edges, 'step-edges-raw', baseStepOptions);
   }
 
   const kernel = cv.Mat.ones(tuning.kernelSize, tuning.kernelSize, cv.CV_8U);
@@ -1778,6 +1798,25 @@ function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
   };
 }
 
+// --- Utility helpers ------------------------------------------------------
+
+// Auto Canny using image median (sigma in [0.2..0.5] typical)
+function autoCanny(grayMat, sigma = 0.33) {
+  const sigmaValue = Number.isFinite(sigma) ? clamp(sigma, 0, 1) : 0.33;
+  const data = grayMat.data; // Uint8Array CV_8U
+  // Quick median: sample every 16th pixel for speed
+  const sample = [];
+  for (let i = 0; i < data.length; i += 16) sample.push(data[i]);
+  sample.sort((a, b) => a - b);
+  const medianIndex = sample.length > 0 ? (sample.length / 2) | 0 : 0;
+  const med = sample[medianIndex] ?? 0;
+  const lower = Math.max(0, (1.0 - sigmaValue) * med);
+  const upper = Math.min(255, (1.0 + sigmaValue) * med);
+  const edges = new cv.Mat();
+  cv.Canny(grayMat, edges, lower, upper);
+  return { edges, lower, upper };
+}
+
 function getHintTuningConfig() {
   const lowRaw = Math.round(hintTuningState.cannyLowThreshold);
   const highRaw = Math.round(hintTuningState.cannyHighThreshold);
@@ -1803,6 +1842,13 @@ function getHintTuningConfig() {
   );
 
   const enableErodeStep = hintTuningState.enableErodeStep;
+  const enableAutoCanny = hintTuningState.enableAutoCanny;
+  const autoCannySigmaCandidate = Number(hintTuningState.autoCannySigma);
+  const autoCannySigma = clamp(
+    Number.isFinite(autoCannySigmaCandidate) ? autoCannySigmaCandidate : HINT_TUNING_DEFAULTS.autoCannySigma,
+    0,
+    1,
+  );
 
   return {
     cannyLowThreshold: low,
@@ -1811,6 +1857,8 @@ function getHintTuningConfig() {
     minAreaRatio,
     paperExclusionTolerance,
     enableErodeStep: enableErodeStep !== undefined ? Boolean(enableErodeStep) : HINT_TUNING_DEFAULTS.enableErodeStep,
+    enableAutoCanny: enableAutoCanny !== undefined ? Boolean(enableAutoCanny) : HINT_TUNING_DEFAULTS.enableAutoCanny,
+    autoCannySigma,
   };
 }
 
@@ -2051,6 +2099,8 @@ function applyHintTuningState(partial, options = {}) {
     minAreaRatio: normalized.minAreaRatio,
     paperExclusionTolerance: normalized.paperExclusionTolerance,
     enableErodeStep: Boolean(normalized.enableErodeStep),
+    enableAutoCanny: Boolean(normalized.enableAutoCanny),
+    autoCannySigma: normalized.autoCannySigma,
   };
 
   if (options.rerunSelection !== false) {
