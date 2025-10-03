@@ -80,6 +80,7 @@ const MAX_DISPLAY_CONTOURS = 5;
 // the original multi-megapixel image at full resolution.
 const MAX_DISPLAY_DIMENSION = 1280;
 const PERIMETER_COMPARISON_EPSILON = 1e-2;
+const NORMALIZED_GEOMETRY_EPSILON = 1e-6;
 let processingStepsIdCounter = 0;
 let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
@@ -94,7 +95,7 @@ let activeOverlayElement = null;
 let activePaperProcessingSteps = null;
 let activeHintProcessingSteps = null;
 const overlayStateMap = new WeakMap();
-const overlayResetButtonMap = new WeakMap();
+const overlayResetControlMap = new WeakMap();
 let testImageButtons = [];
 let activeTestImageId = null;
 
@@ -115,6 +116,10 @@ if (!defaultPreviewLoaded) {
 setupTabs();
 setupHintTuningControls();
 setupThemeToggle();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', handleGlobalKeyDown, true);
+}
 
 const stlDesignerOptions = {
   viewerId: 'stl-viewer',
@@ -360,6 +365,13 @@ function createPreviewResultSection(container) {
 
   const overlay = document.createElement('div');
   overlay.className = 'preview-result__overlay';
+  overlay.tabIndex = 0;
+  overlay.setAttribute('role', 'application');
+  overlay.setAttribute('aria-label', 'Image overlay: left-click to add hints; right-click or Ctrl/Cmd-click to draw exclusion zones; double-click to finish a zone; press Escape to cancel drawing.');
+  overlay.setAttribute('title', 'Left-click to add hints. Right-click or Ctrl/Cmd-click to draw exclusion zones. Double-click to close a zone. Press Escape to cancel drawing.');
+  overlay.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+  });
 
   canvasWrapper.appendChild(canvas);
   canvasWrapper.appendChild(overlay);
@@ -379,11 +391,32 @@ function createPreviewResultSection(container) {
     if (!state) return;
     clearHintPoints(state);
     clearSelectionHighlight(state);
+    clearExclusions(state);
   });
+  resetHintsButton.setAttribute('aria-label', 'Remove all hint points');
+  resetHintsButton.setAttribute('title', 'Remove all hint points');
+
+  const resetExclusionsButton = document.createElement('button');
+  resetExclusionsButton.type = 'button';
+  resetExclusionsButton.className = 'preview-result__button';
+  resetExclusionsButton.textContent = 'Reset exclusions';
+  resetExclusionsButton.disabled = true;
+  resetExclusionsButton.addEventListener('click', () => {
+    const state = overlayStateMap.get(overlay);
+    if (!state) return;
+    clearExclusions(state);
+    rerunHintSelection();
+  });
+  resetExclusionsButton.setAttribute('aria-label', 'Remove all exclusion zones');
+  resetExclusionsButton.setAttribute('title', 'Remove all exclusion zones');
 
   controls.appendChild(resetHintsButton);
+  controls.appendChild(resetExclusionsButton);
   section.appendChild(controls);
-  overlayResetButtonMap.set(overlay, resetHintsButton);
+  overlayResetControlMap.set(overlay, {
+    hints: resetHintsButton,
+    exclusions: resetExclusionsButton,
+  });
   container.appendChild(section);
 
   return { heading, canvas, overlay };
@@ -851,6 +884,23 @@ function ensureProcessingStyles() {
       height: 100%;
       pointer-events: none;
     }
+    .preview-result__exclusions {
+      pointer-events: none;
+    }
+    .preview-result__exclusion {
+      fill: rgba(248, 113, 113, 0.24);
+      stroke: #ef4444;
+      stroke-width: 3;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+    .preview-result__exclusion--active {
+      fill: rgba(248, 113, 113, 0.15);
+      stroke-dasharray: 8 4;
+    }
+    .preview-result__exclusion[data-visible="false"] {
+      display: none;
+    }
     .preview-result__outline {
       fill: rgba(79, 70, 229, 0.12);
       stroke: #4f46e5;
@@ -889,6 +939,8 @@ function ensureProcessingStyles() {
     .preview-result__controls {
       display: flex;
       justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
       margin-top: 8px;
     }
     .preview-result__button {
@@ -1040,11 +1092,17 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   if (!overlay) return;
   overlay.replaceChildren();
 
+  const resetButtons = overlayResetControlMap.get(overlay) || {};
   const state = {
     displayInfo: renderInfo || null,
     selectionPath: null,
-    resetButton: overlayResetButtonMap.get(overlay) || null,
+    resetButtons,
     paperOutline: null,
+    exclusions: [],
+    exclusionElements: [],
+    activeExclusion: null,
+    exclusionLayer: null,
+    activeExclusionPath: null,
   };
   overlayStateMap.set(overlay, state);
   activeOverlayElement = overlay;
@@ -1091,6 +1149,18 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
     };
   }
 
+  const exclusionsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  exclusionsGroup.classList.add('preview-result__exclusions');
+  svg.appendChild(exclusionsGroup);
+  state.exclusionLayer = exclusionsGroup;
+
+  const activeExclusion = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+  activeExclusion.classList.add('preview-result__exclusion', 'preview-result__exclusion--active');
+  activeExclusion.dataset.visible = 'false';
+  activeExclusion.setAttribute('points', '');
+  exclusionsGroup.appendChild(activeExclusion);
+  state.activeExclusionPath = activeExclusion;
+
   const selection = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
   selection.classList.add('preview-result__selection');
   selection.dataset.visible = 'false';
@@ -1106,9 +1176,14 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
   state.hintLayer = hintLayer;
   state.hintPoints = [];
   state.lastHintPixel = null;
-  if (state.resetButton) {
-    state.resetButton.disabled = true;
+  if (state.resetButtons?.hints) {
+    state.resetButtons.hints.disabled = true;
   }
+  if (state.resetButtons?.exclusions) {
+    state.resetButtons.exclusions.disabled = state.exclusions.length === 0;
+  }
+
+  renderExclusions(state);
 
   if (normalizedCorners && refreshOverlay) {
     normalizedCorners.forEach((_corner, index) => {
@@ -1126,6 +1201,10 @@ function attachPaperOverlay(overlay, corners, renderInfo) {
 
   overlay.removeEventListener('click', handleOverlayClick);
   overlay.addEventListener('click', handleOverlayClick);
+  overlay.removeEventListener('pointerdown', handleOverlayPointerDown);
+  overlay.addEventListener('pointerdown', handleOverlayPointerDown);
+  overlay.removeEventListener('dblclick', handleOverlayDoubleClick);
+  overlay.addEventListener('dblclick', handleOverlayDoubleClick);
 }
 
 function createOverlayHandle(overlay, corners, index, refresh) {
@@ -1174,7 +1253,10 @@ function createOverlayHandle(overlay, corners, index, refresh) {
 }
 
 function handleOverlayClick(event) {
+  if (event.defaultPrevented) return;
   if (event.button !== 0) return;
+  if (event.ctrlKey || event.metaKey) return;
+  if (event.detail > 1) return;
 
   const overlay = event.currentTarget;
   const state = overlayStateMap.get(overlay);
@@ -1213,6 +1295,311 @@ function handleOverlayClick(event) {
   runHintSelection(state);
 }
 
+function handleOverlayPointerDown(event) {
+  const isRightClick = event.button === 2;
+  const isModifierClick = event.button === 0 && (event.ctrlKey || event.metaKey);
+  if (!isRightClick && !isModifierClick) return;
+
+  const overlay = event.currentTarget;
+  const state = overlayStateMap.get(overlay);
+  if (!state) return;
+
+  const handleTarget = event.target?.closest?.('.preview-result__handle');
+  if (handleTarget) return;
+
+  const bounds = overlay.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (typeof overlay.focus === 'function') {
+    try {
+      overlay.focus({ preventScroll: true });
+    } catch (_error) {
+      overlay.focus();
+    }
+  }
+
+  const normalizedX = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+  const normalizedY = clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
+
+  addExclusionPoint(state, normalizedX, normalizedY);
+  updateActiveExclusionPath(state);
+}
+
+function handleOverlayDoubleClick(event) {
+  const overlay = event.currentTarget;
+  const state = overlayStateMap.get(overlay);
+  if (!state) return;
+
+  if (!Array.isArray(state.activeExclusion) || state.activeExclusion.length < 2) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const completed = finalizeActiveExclusion(state);
+  if (completed) {
+    rerunHintSelection();
+  }
+}
+
+function addExclusionPoint(state, normalizedX, normalizedY) {
+  if (!state) return;
+
+  if (!Array.isArray(state.activeExclusion)) {
+    state.activeExclusion = [];
+  }
+
+  const x = clamp(Number(normalizedX) || 0, 0, 1);
+  const y = clamp(Number(normalizedY) || 0, 0, 1);
+  const lastPoint = state.activeExclusion[state.activeExclusion.length - 1];
+
+  if (lastPoint && Math.abs(lastPoint.x - x) < 1e-4 && Math.abs(lastPoint.y - y) < 1e-4) {
+    return;
+  }
+
+  state.activeExclusion.push({ x, y });
+}
+
+function finalizeActiveExclusion(state) {
+  if (!state || !Array.isArray(state.activeExclusion)) return false;
+
+  const polygon = state.activeExclusion.slice();
+  if (polygon.length < 3) {
+    cancelActiveExclusion(state);
+    return false;
+  }
+
+  const normalized = polygon.map((point) => ({
+    x: clamp(Number(point?.x) || 0, 0, 1),
+    y: clamp(Number(point?.y) || 0, 0, 1),
+  }));
+
+  if (!Array.isArray(state.exclusions)) {
+    state.exclusions = [];
+  }
+
+  state.exclusions.push(normalized);
+  state.activeExclusion = null;
+  updateActiveExclusionPath(state);
+  renderExclusions(state);
+
+  if (state.resetButtons?.exclusions) {
+    state.resetButtons.exclusions.disabled = state.exclusions.length === 0;
+  }
+
+  return true;
+}
+
+function cancelActiveExclusion(state) {
+  if (!state) return false;
+  const hadActivePoints = Array.isArray(state.activeExclusion) && state.activeExclusion.length > 0;
+  state.activeExclusion = null;
+  updateActiveExclusionPath(state);
+  return hadActivePoints;
+}
+
+function updateActiveExclusionPath(state) {
+  if (!state?.activeExclusionPath) return;
+
+  const polygon = Array.isArray(state.activeExclusion) ? state.activeExclusion : [];
+  if (!polygon.length) {
+    state.activeExclusionPath.dataset.visible = 'false';
+    state.activeExclusionPath.setAttribute('points', '');
+    return;
+  }
+
+  state.activeExclusionPath.setAttribute('points', normalizedPolygonToPointString(polygon));
+  state.activeExclusionPath.dataset.visible = 'true';
+}
+
+function renderExclusions(state) {
+  if (!state?.exclusionLayer) return;
+
+  const activePath = state.activeExclusionPath;
+  if (Array.isArray(state.exclusionElements)) {
+    state.exclusionElements.forEach((element) => element.remove());
+  }
+  state.exclusionElements = [];
+
+  if (!Array.isArray(state.exclusions)) {
+    state.exclusions = [];
+  }
+
+  state.exclusions.forEach((polygon) => {
+    if (!Array.isArray(polygon) || polygon.length < 3) return;
+    const exclusion = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    exclusion.classList.add('preview-result__exclusion');
+    exclusion.setAttribute('points', normalizedPolygonToPointString(polygon));
+    exclusion.setAttribute('aria-hidden', 'true');
+    state.exclusionLayer.insertBefore(exclusion, activePath || null);
+    state.exclusionElements.push(exclusion);
+  });
+
+  if (state.resetButtons?.exclusions) {
+    state.resetButtons.exclusions.disabled = state.exclusions.length === 0;
+  }
+}
+
+function clearExclusions(state) {
+  if (!state) return;
+  state.exclusions = [];
+  renderExclusions(state);
+  cancelActiveExclusion(state);
+  if (state.resetButtons?.exclusions) {
+    state.resetButtons.exclusions.disabled = true;
+  }
+}
+
+function normalizedPolygonToPointString(polygon) {
+  if (!Array.isArray(polygon)) return '';
+  return polygon
+    .map((point) => {
+      if (!point) return null;
+      const x = clamp(Number(point.x) || 0, 0, 1) * OVERLAY_COORDINATE_SCALE;
+      const y = clamp(Number(point.y) || 0, 0, 1) * OVERLAY_COORDINATE_SCALE;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function handleGlobalKeyDown(event) {
+  if (event.key !== 'Escape') return;
+  if (!activeOverlayElement) return;
+  const state = overlayStateMap.get(activeOverlayElement);
+  if (!state) return;
+  const canceled = cancelActiveExclusion(state);
+  if (canceled) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
+function contourIntersectsNormalizedPolygons(contour, polygons, dimensions, sourceMat) {
+  if (!contour || !Array.isArray(polygons) || !polygons.length) return false;
+
+  const baseDimensions = dimensions && (dimensions.originalWidth || dimensions.originalHeight)
+    ? dimensions
+    : sourceMat
+      ? { originalWidth: sourceMat.cols, originalHeight: sourceMat.rows }
+      : null;
+
+  let normalizedContour = normalizedPointsFromContour(contour, baseDimensions);
+  if ((!normalizedContour || !normalizedContour.length) && sourceMat) {
+    normalizedContour = normalizedPointsFromContour(contour, {
+      originalWidth: sourceMat.cols,
+      originalHeight: sourceMat.rows,
+    });
+  }
+
+  if (!normalizedContour || normalizedContour.length < 3) {
+    return false;
+  }
+
+  for (let index = 0; index < polygons.length; index += 1) {
+    const polygon = polygons[index];
+    if (!Array.isArray(polygon) || polygon.length < 3) continue;
+    if (normalizedPolygonsIntersect(normalizedContour, polygon)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizedPolygonsIntersect(polyA, polyB) {
+  if (!Array.isArray(polyA) || polyA.length < 3 || !Array.isArray(polyB) || polyB.length < 3) {
+    return false;
+  }
+
+  for (let i = 0; i < polyA.length; i += 1) {
+    if (normalizedPointInPolygon(polyA[i], polyB)) {
+      return true;
+    }
+  }
+
+  for (let i = 0; i < polyB.length; i += 1) {
+    if (normalizedPointInPolygon(polyB[i], polyA)) {
+      return true;
+    }
+  }
+
+  for (let i = 0; i < polyA.length; i += 1) {
+    const a1 = polyA[i];
+    const a2 = polyA[(i + 1) % polyA.length];
+    for (let j = 0; j < polyB.length; j += 1) {
+      const b1 = polyB[j];
+      const b2 = polyB[(j + 1) % polyB.length];
+      if (normalizedSegmentsIntersect(a1, a2, b1, b2)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function normalizedPointInPolygon(point, polygon) {
+  if (!point || !Array.isArray(polygon) || polygon.length < 3) return false;
+
+  if (polygon.some((segmentPoint, index) => {
+    const next = polygon[(index + 1) % polygon.length];
+    return isPointOnSegmentNormalized(point, segmentPoint, next);
+  })) {
+    return true;
+  }
+
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const deltaY = b.y - a.y;
+    if (Math.abs(deltaY) <= NORMALIZED_GEOMETRY_EPSILON) continue;
+    const intersects = ((a.y > point.y) !== (b.y > point.y))
+      && (point.x < ((b.x - a.x) * (point.y - a.y)) / deltaY + a.x);
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+function normalizedSegmentsIntersect(a1, a2, b1, b2) {
+  const o1 = normalizedOrientation(a1, a2, b1);
+  const o2 = normalizedOrientation(a1, a2, b2);
+  const o3 = normalizedOrientation(b1, b2, a1);
+  const o4 = normalizedOrientation(b1, b2, a2);
+
+  if ((o1 * o2) < -NORMALIZED_GEOMETRY_EPSILON && (o3 * o4) < -NORMALIZED_GEOMETRY_EPSILON) {
+    return true;
+  }
+
+  if (Math.abs(o1) <= NORMALIZED_GEOMETRY_EPSILON && isPointOnSegmentNormalized(b1, a1, a2)) return true;
+  if (Math.abs(o2) <= NORMALIZED_GEOMETRY_EPSILON && isPointOnSegmentNormalized(b2, a1, a2)) return true;
+  if (Math.abs(o3) <= NORMALIZED_GEOMETRY_EPSILON && isPointOnSegmentNormalized(a1, b1, b2)) return true;
+  if (Math.abs(o4) <= NORMALIZED_GEOMETRY_EPSILON && isPointOnSegmentNormalized(a2, b1, b2)) return true;
+
+  return false;
+}
+
+function isPointOnSegmentNormalized(point, start, end) {
+  if (!point || !start || !end) return false;
+  const cross = (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
+  if (Math.abs(cross) > NORMALIZED_GEOMETRY_EPSILON) return false;
+  const dot = (point.x - start.x) * (point.x - end.x) + (point.y - start.y) * (point.y - end.y);
+  return dot <= NORMALIZED_GEOMETRY_EPSILON;
+}
+
+function normalizedOrientation(a, b, c) {
+  if (!a || !b || !c) return 0;
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
 function addHintPoint(state, normalizedX, normalizedY) {
   if (!state?.hintLayer) return;
 
@@ -1225,8 +1612,8 @@ function addHintPoint(state, normalizedX, normalizedY) {
   state.hintLayer.appendChild(hintPoint);
   state.hintPoints.push(hintPoint);
 
-  if (state.resetButton) {
-    state.resetButton.disabled = false;
+  if (state.resetButtons?.hints) {
+    state.resetButtons.hints.disabled = false;
   }
 }
 
@@ -1237,8 +1624,8 @@ function clearHintPoints(state) {
   state.hintPoints = [];
   state.lastHintPixel = null;
 
-  if (state.resetButton) {
-    state.resetButton.disabled = true;
+  if (state.resetButtons?.hints) {
+    state.resetButtons.hints.disabled = true;
   }
 }
 
@@ -1423,6 +1810,7 @@ function runHintSelection(state) {
     showStep,
     state.displayInfo,
     state.paperOutline,
+    state.exclusions,
   );
   if (!result) {
     updateSelectionHighlight(state, null, state.displayInfo);
@@ -1433,7 +1821,7 @@ function runHintSelection(state) {
   updateSelectionHighlight(state, contour, state.displayInfo, normalizedPoints);
 }
 
-function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutline) {
+function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutline, exclusionPolygons) {
   if (!sourceMat) return null;
 
   const renderStep = typeof showStep === 'function' ? showStep : null;
@@ -1448,20 +1836,18 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     ? paperOutline
     : null;
 
-  let workingSource = sourceMat;
-  let cleanupWorkingSource = null;
-
-  if (normalizedPaperOutline) {
-    const masked = buildMaskedDisplayMat(sourceMat, normalizedPaperOutline, displayInfo);
-    if (masked?.mat) {
-      workingSource = masked.mat;
-    }
-    cleanupWorkingSource = masked?.cleanup || null;
-  }
+  const normalizedExclusions = Array.isArray(exclusionPolygons)
+    ? exclusionPolygons
+        .filter((polygon) => Array.isArray(polygon) && polygon.length >= 3)
+        .map((polygon) => polygon.map((entry) => ({
+          x: clamp(Number(entry?.x) || 0, 0, 1),
+          y: clamp(Number(entry?.y) || 0, 0, 1),
+        })))
+    : [];
 
   if (renderStep) {
     if (normalizedHint) {
-      const highlighted = workingSource.clone();
+      const highlighted = sourceMat.clone();
 
       const hintLocation = new cv.Point(point.x, point.y);
       const scaleEstimate = (() => {
@@ -1472,7 +1858,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
             return Math.max(scaleX, scaleY);
           }
         }
-        const maxDimension = Math.max(workingSource.cols, workingSource.rows);
+        const maxDimension = Math.max(sourceMat.cols, sourceMat.rows);
         if (!maxDimension) return 1;
         const ratio = maxDimension / MAX_DISPLAY_DIMENSION;
         return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
@@ -1483,7 +1869,6 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       const innerRadius = Math.max(2, outerRadius - 3);
       const coreRadius = Math.max(1, Math.round(innerRadius * 0.4));
 
-      // Recreate the layered white/pink/white target used for the interactive hint marker.
       cv.circle(highlighted, hintLocation, outerRadius, new cv.Scalar(255, 255, 255, 255), -1, cv.LINE_AA);
       cv.circle(highlighted, hintLocation, innerRadius, new cv.Scalar(153, 72, 236, 255), -1, cv.LINE_AA);
       if (coreRadius < innerRadius) {
@@ -1493,9 +1878,79 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       renderStep('Hint Source - Original Photo', highlighted, 'step-original', baseStepOptions);
       highlighted.delete();
     } else {
-      renderStep('Hint Source - Original Photo', workingSource, 'step-original', baseStepOptions);
+      renderStep('Hint Source - Original Photo', sourceMat, 'step-original', baseStepOptions);
     }
   }
+
+  let workingSource = sourceMat;
+  let cleanupWorkingSource = null;
+
+  if (normalizedPaperOutline) {
+    const masked = buildMaskedDisplayMat(sourceMat, normalizedPaperOutline, displayInfo);
+    if (masked?.mat) {
+      workingSource = masked.mat;
+      if (renderStep) {
+        const preview = workingSource.clone();
+        const stepOptions = baseStepOptions ? { ...baseStepOptions } : {};
+        stepOptions.overlayPolygon = normalizedPaperOutline;
+        stepOptions.overlayFill = 'rgba(79, 70, 229, 0.18)';
+        stepOptions.overlayStroke = '#4f46e5';
+        stepOptions.overlayLineWidth = 3;
+        renderStep('Hint Source - Paper Masked', preview, 'step-original', stepOptions);
+        preview.delete();
+      }
+    }
+    cleanupWorkingSource = masked?.cleanup || null;
+  }
+
+  if (normalizedExclusions.length && workingSource) {
+    const exclusionMask = new cv.Mat(workingSource.rows, workingSource.cols, cv.CV_8UC1);
+    exclusionMask.setTo(new cv.Scalar(255, 255, 255, 255));
+    let hasMask = false;
+
+    normalizedExclusions.forEach((polygon, index) => {
+      const maskResult = buildMaskedDisplayMat(workingSource, polygon, displayInfo, { returnMaskOnly: true });
+      if (maskResult?.mask) {
+        cv.bitwise_not(maskResult.mask, maskResult.mask);
+        cv.bitwise_and(exclusionMask, maskResult.mask, exclusionMask);
+        hasMask = true;
+      }
+
+      if (renderStep) {
+        const stepOptions = baseStepOptions ? { ...baseStepOptions } : {};
+        stepOptions.overlayPolygon = polygon;
+        stepOptions.overlayFill = 'rgba(248, 113, 113, 0.28)';
+        stepOptions.overlayStroke = '#f87171';
+        stepOptions.overlayLineWidth = 3;
+        const preview = workingSource.clone();
+        renderStep(`Excluded Region #${index + 1}`, preview, 'step-exclusion', stepOptions);
+        preview.delete();
+      }
+
+      if (maskResult?.cleanup) {
+        maskResult.cleanup();
+      }
+    });
+
+    if (hasMask) {
+      const invertedMask = new cv.Mat();
+      cv.bitwise_not(exclusionMask, invertedMask);
+      const filler = new cv.Mat(workingSource.rows, workingSource.cols, workingSource.type());
+      filler.setTo(new cv.Scalar(255, 255, 255, 255));
+      filler.copyTo(workingSource, invertedMask);
+      filler.delete();
+      invertedMask.delete();
+
+      if (renderStep) {
+        const preview = workingSource.clone();
+        renderStep('Hint Source - Exclusions Applied', preview, 'step-original', baseStepOptions);
+        preview.delete();
+      }
+    }
+
+    exclusionMask.delete();
+  }
+
   const tuning = getHintTuningConfig();
   const paperTolerance = Math.max(0, Number(tuning.paperExclusionTolerance) || 0);
   const paperMetrics = paperTolerance > 0 && normalizedPaperOutline
@@ -1612,6 +2067,15 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     }
 
     const perimeter = cv.arcLength(contour, true);
+
+    if (
+      normalizedExclusions.length
+      && contourIntersectsNormalizedPolygons(contour, normalizedExclusions, displayInfo, workingSource)
+    ) {
+      contour.delete();
+      continue;
+    }
+
     insertTopContour(topContours, contour, area, perimeter);
 
     if (paperMetrics) {
@@ -1815,7 +2279,7 @@ function createPolygonMatFromNormalizedOutline(normalizedOutline, sourceMat, dim
   return cv.matFromArray(pointData.length / 2, 1, cv.CV_32SC2, Int32Array.from(pointData));
 }
 
-function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
+function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions, options = {}) {
   // Create a display-friendly copy of the image that hides everything outside the paper polygon.
   const polygon = createPolygonMatFromNormalizedOutline(normalizedOutline, sourceMat, dimensions);
   if (!polygon) return null;
@@ -1828,15 +2292,25 @@ function buildMaskedDisplayMat(sourceMat, normalizedOutline, dimensions) {
   polygons.delete();
   polygon.delete();
 
+  if (options && options.returnMaskOnly) {
+    return {
+      mask,
+      cleanup: () => {
+        mask.delete();
+      },
+    };
+  }
+
   const masked = new cv.Mat(sourceMat.rows, sourceMat.cols, sourceMat.type());
   masked.setTo(new cv.Scalar(255, 255, 255, 255));
   sourceMat.copyTo(masked, mask);
-  mask.delete();
 
   return {
     mat: masked,
+    mask,
     cleanup: () => {
       masked.delete();
+      mask.delete();
     },
   };
 }
