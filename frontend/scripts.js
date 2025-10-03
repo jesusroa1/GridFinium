@@ -7,6 +7,11 @@ const DOM_IDS = {
 const DEFAULT_IMAGE_PATH = 'example_coaster.jpeg';
 
 const TAB_DATA_ATTRIBUTE = 'data-tab-target';
+const COLOR_THEME_STORAGE_KEY = 'gridfinium:color-theme';
+const COLOR_THEMES = Object.freeze({
+  LIGHT: 'light',
+  DARK: 'dark',
+});
 const STL_DEFAULT_DIMENSIONS = Object.freeze({
   width: 4,
   depth: 6,
@@ -71,6 +76,7 @@ if (fileInput && previewContainer) {
   console.warn('GridFinium: required DOM elements not found.');
 }
 
+setupThemeToggle();
 setupTabs();
 setupHintTuningControls();
 
@@ -92,6 +98,69 @@ ensureThreeJs()
     console.error('GridFinium: unable to load Three.js from any CDN source. Falling back to canvas renderer.', error);
     initStlDesigner(stlDesignerOptions);
   });
+
+function setupThemeToggle() {
+  const themeToggleButton = document.getElementById('theme-toggle');
+  if (!themeToggleButton) return;
+
+  const rootElement = document.documentElement;
+  const systemPreferenceQuery = window.matchMedia?.('(prefers-color-scheme: dark)') ?? null;
+
+  const applyTheme = (theme) => {
+    const normalizedTheme = theme === COLOR_THEMES.DARK ? COLOR_THEMES.DARK : COLOR_THEMES.LIGHT;
+    rootElement.setAttribute('data-theme', normalizedTheme);
+    themeToggleButton.setAttribute('aria-pressed', String(normalizedTheme === COLOR_THEMES.DARK));
+    themeToggleButton.setAttribute(
+      'aria-label',
+      normalizedTheme === COLOR_THEMES.DARK ? 'Switch to light mode' : 'Switch to dark mode',
+    );
+
+    const icon = themeToggleButton.querySelector('.theme-toggle__icon');
+    const label = themeToggleButton.querySelector('.theme-toggle__label');
+    if (icon) {
+      icon.textContent = normalizedTheme === COLOR_THEMES.DARK ? '🌙' : '🌞';
+    }
+
+    if (label) {
+      label.textContent = normalizedTheme === COLOR_THEMES.DARK ? 'Dark mode' : 'Light mode';
+    }
+  };
+
+  const storedTheme = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
+  const hasStoredTheme = storedTheme === COLOR_THEMES.LIGHT || storedTheme === COLOR_THEMES.DARK;
+  const systemPrefersDark = systemPreferenceQuery?.matches ?? false;
+  let activeTheme = hasStoredTheme ? storedTheme : systemPrefersDark ? COLOR_THEMES.DARK : COLOR_THEMES.LIGHT;
+  let respectSystemPreference = !hasStoredTheme;
+
+  applyTheme(activeTheme);
+
+  // Keep the UI in sync with the operating system preference until the user overrides it.
+  if (respectSystemPreference && systemPreferenceQuery) {
+    const handleSystemThemeChange = (event) => {
+      if (!respectSystemPreference) return;
+      activeTheme = event.matches ? COLOR_THEMES.DARK : COLOR_THEMES.LIGHT;
+      applyTheme(activeTheme);
+    };
+
+    if (typeof systemPreferenceQuery.addEventListener === 'function') {
+      systemPreferenceQuery.addEventListener('change', handleSystemThemeChange);
+    } else if (typeof systemPreferenceQuery.addListener === 'function') {
+      systemPreferenceQuery.addListener(handleSystemThemeChange);
+    }
+  }
+
+  themeToggleButton.addEventListener('click', () => {
+    respectSystemPreference = false;
+    activeTheme = activeTheme === COLOR_THEMES.DARK ? COLOR_THEMES.LIGHT : COLOR_THEMES.DARK;
+    applyTheme(activeTheme);
+
+    try {
+      localStorage.setItem(COLOR_THEME_STORAGE_KEY, activeTheme);
+    } catch (storageError) {
+      console.warn('GridFinium: unable to store theme preference.', storageError);
+    }
+  });
+}
 
 async function handleFileSelection(event) {
   const file = event.target?.files?.[0];
