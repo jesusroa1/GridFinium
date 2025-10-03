@@ -1453,10 +1453,10 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
 
   if (normalizedPaperOutline) {
     const masked = buildMaskedDisplayMat(sourceMat, normalizedPaperOutline, displayInfo);
-    if (masked) {
+    if (masked?.mat) {
       workingSource = masked.mat;
-      cleanupWorkingSource = masked.cleanup;
     }
+    cleanupWorkingSource = masked?.cleanup || null;
   }
 
   if (renderStep) {
