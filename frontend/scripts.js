@@ -1627,7 +1627,9 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       }
 
       const caption = captionLines.join('\n');
-      const stepOptions = baseStepOptions ? { ...baseStepOptions } : undefined;
+      const stepOptions = baseStepOptions
+        ? { ...baseStepOptions }
+        : undefined;
       renderStep(caption, display, 'step-contour', stepOptions);
       display.delete();
       entry.mat.delete();
