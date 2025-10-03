@@ -4,7 +4,29 @@ const DOM_IDS = {
   preview: 'preview',
 };
 
-const DEFAULT_IMAGE_PATH = 'example_coaster.jpeg';
+const TEST_IMAGES = Object.freeze([
+  {
+    id: 'test-image-mouse',
+    label: 'Mouse on paper',
+    src: 'frontend/test-images/mouse.png',
+  },
+  {
+    id: 'test-image-remote',
+    label: 'Remote on paper',
+    src: 'frontend/test-images/remote.png',
+  },
+  {
+    id: 'test-image-coaster',
+    label: 'Coaster top on paper',
+    src: 'frontend/test-images/coaster-top.png',
+  },
+]);
+
+const TEST_IMAGE_LOOKUP = new Map(TEST_IMAGES.map((image) => [image.id, image]));
+const DEFAULT_PREVIEW_FALLBACK = 'example_coaster.jpeg';
+const DEFAULT_IMAGE_PATH = TEST_IMAGES[0]?.src ?? DEFAULT_PREVIEW_FALLBACK;
+const TEST_IMAGE_PICKER_ID = 'test-image-picker';
+const TEST_IMAGE_BUTTON_ACTIVE_CLASS = 'test-image-button--active';
 
 const TAB_DATA_ATTRIBUTE = 'data-tab-target';
 const STL_DEFAULT_DIMENSIONS = Object.freeze({
@@ -62,13 +84,21 @@ let activePaperProcessingSteps = null;
 let activeHintProcessingSteps = null;
 const overlayStateMap = new WeakMap();
 const overlayResetButtonMap = new WeakMap();
+let testImageButtons = [];
+let activeTestImageId = null;
+
+let defaultPreviewLoaded = false;
 
 // Only hook up the change handler when the key DOM nodes exist.
 if (fileInput && previewContainer) {
   fileInput.addEventListener('change', handleFileSelection);
-  loadDefaultPreview(DEFAULT_IMAGE_PATH);
+  defaultPreviewLoaded = setupTestImagePicker();
 } else {
   console.warn('GridFinium: required DOM elements not found.');
+}
+
+if (!defaultPreviewLoaded) {
+  loadDefaultPreview(DEFAULT_IMAGE_PATH);
 }
 
 setupTabs();
@@ -96,6 +126,8 @@ ensureThreeJs()
 async function handleFileSelection(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
+
+  setActiveTestImage(null);
 
   const objectUrl = URL.createObjectURL(file);
 
@@ -189,6 +221,63 @@ async function processImageFromSource(imageSrc) {
   }
 }
 
+// Build the toggle buttons that let users try the bundled sample photos.
+function setupTestImagePicker() {
+  const picker = document.getElementById(TEST_IMAGE_PICKER_ID);
+  if (!picker) return false;
+
+  const buttons = Array.from(picker.querySelectorAll('[data-test-image-id]'));
+  if (buttons.length === 0) return false;
+
+  testImageButtons = buttons;
+
+  buttons.forEach((button) => {
+    const imageId = button.getAttribute('data-test-image-id');
+    const testImage = TEST_IMAGE_LOOKUP.get(imageId);
+
+    button.type = 'button';
+    button.setAttribute('aria-pressed', 'false');
+
+    if (!testImage) {
+      button.disabled = true;
+      button.setAttribute('aria-disabled', 'true');
+      return;
+    }
+
+    button.addEventListener('click', () => {
+      if (activeTestImageId === imageId) return;
+
+      setActiveTestImage(imageId);
+      if (fileInput) {
+        fileInput.value = '';
+      }
+      loadDefaultPreview(testImage.src);
+    });
+  });
+
+  const defaultImage = TEST_IMAGES[0];
+  if (defaultImage) {
+    setActiveTestImage(defaultImage.id);
+    loadDefaultPreview(defaultImage.src);
+    return true;
+  }
+
+  return false;
+}
+
+// Highlight the active sample image button and reset when uploads occur.
+function setActiveTestImage(testImageId) {
+  activeTestImageId = testImageId;
+
+  if (!testImageButtons.length) return;
+
+  testImageButtons.forEach((button) => {
+    const isActive = button.getAttribute('data-test-image-id') === testImageId;
+    button.classList.toggle(TEST_IMAGE_BUTTON_ACTIVE_CLASS, isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
 function createPreviewResultSection(container) {
   ensureProcessingStyles();
 
@@ -239,6 +328,18 @@ function createPreviewResultSection(container) {
 function loadDefaultPreview(imageSrc) {
   processImageFromSource(imageSrc).catch((error) => {
     console.error('GridFinium: failed to load default preview image.', error);
+
+    if (imageSrc === DEFAULT_PREVIEW_FALLBACK) {
+      return;
+    }
+
+    if (activeTestImageId) {
+      setActiveTestImage(null);
+    }
+
+    processImageFromSource(DEFAULT_PREVIEW_FALLBACK).catch((fallbackError) => {
+      console.error('GridFinium: failed to load fallback preview image.', fallbackError);
+    });
   });
 }
 
