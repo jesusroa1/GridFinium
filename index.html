@@ -228,6 +228,68 @@
       box-shadow: var(--shadow-button-primary-hover);
     }
 
+    .test-image-picker {
+      margin-top: 28px;
+      padding: 20px clamp(16px, 4vw, 24px);
+      border-radius: 16px;
+      border: 1px dashed #cbd5f5;
+      background: linear-gradient(135deg, #f8faff, #eef2ff);
+    }
+
+    .test-image-picker__intro {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .test-image-picker__heading {
+      margin: 0;
+      font-size: clamp(1.4rem, 3vw, 1.6rem);
+    }
+
+    .test-image-picker__description {
+      margin: 0;
+      color: #475569;
+      font-size: 0.95rem;
+      max-width: 62ch;
+    }
+
+    .test-image-picker__buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .test-image-button {
+      border: 1px solid #cbd5f5;
+      background: #ffffff;
+      color: #1f2933;
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    }
+
+    .test-image-button:hover {
+      background: rgba(99, 102, 241, 0.12);
+      color: #312e81;
+      transform: translateY(-1px);
+    }
+
+    .test-image-button:focus-visible {
+      outline: 2px solid #4f46e5;
+      outline-offset: 2px;
+    }
+
+    .test-image-button--active {
+      background: #4f46e5;
+      color: #ffffff;
+      border-color: #4f46e5;
+      box-shadow: 0 10px 24px rgba(79, 70, 229, 0.25);
+    }
+
     .hint-tuning-card__toggle:disabled {
       opacity: 0.6;
       cursor: not-allowed;
@@ -474,6 +536,18 @@
     </nav>
 
     <section id="image-tools" class="tab-panel is-active" aria-label="Image Tools">
+      <section class="test-image-picker" aria-labelledby="test-image-heading">
+        <div class="test-image-picker__intro">
+          <h2 id="test-image-heading" class="test-image-picker__heading">Sample</h2>
+          <p class="test-image-picker__description">Switch between the built-in test photos to see how the workflow responds. Uploading your own image will replace these samples.</p>
+        </div>
+        <div class="test-image-picker__buttons" id="test-image-picker" role="group" aria-label="Sample photos">
+          <button class="test-image-button" data-test-image-id="test-image-mouse">Mouse on paper</button>
+          <button class="test-image-button" data-test-image-id="test-image-remote">Remote on paper</button>
+          <button class="test-image-button" data-test-image-id="test-image-coaster">Coaster top on paper</button>
+        </div>
+      </section>
+
       <h2>1. Upload File</h2>
       <p>Upload a photo to detect and outline documents automatically.</p>
       <input type="file" accept=".jpg,.jpeg,.png" id="file-upload" name="file-upload">
