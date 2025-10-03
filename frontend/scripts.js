@@ -926,17 +926,19 @@ function ensureProcessingStyles() {
     }
     .processing-steps {
       margin-top: 16px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: #fff;
+      border: 1px solid var(--color-processing-border);
+      border-radius: 12px;
+      background: var(--color-processing-surface);
       overflow: hidden;
+      box-shadow: var(--shadow-card);
+      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
     .processing-steps__header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 12px 16px;
-      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      background: linear-gradient(135deg, var(--color-processing-header-start), var(--color-processing-header-end));
     }
     .processing-steps__title {
       margin: 0;
@@ -945,24 +947,30 @@ function ensureProcessingStyles() {
     }
     .processing-steps__toggle {
       border: none;
-      background: #4f46e5;
-      color: #fff;
+      background: var(--color-accent);
+      color: var(--color-accent-contrast);
       padding: 6px 14px;
       border-radius: 999px;
       cursor: pointer;
       font-weight: 600;
-      transition: background 0.2s ease;
+      transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+      box-shadow: var(--shadow-button-primary);
     }
     .processing-steps__toggle:hover {
-      background: #4338ca;
+      background: var(--color-accent-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-button-primary-hover);
     }
     .processing-steps--disabled .processing-steps__toggle {
       opacity: 0.6;
       cursor: not-allowed;
-      background: #9ca3af;
+      background: var(--color-processing-toggle-disabled);
+      box-shadow: none;
+      transform: none;
     }
     .processing-steps--disabled .processing-steps__toggle:hover {
-      background: #9ca3af;
+      background: var(--color-processing-toggle-disabled);
+      transform: none;
     }
     .processing-steps__list {
       display: grid;
@@ -989,13 +997,16 @@ function ensureProcessingStyles() {
     .processing-step figcaption {
       margin: 0;
       font-size: 0.85rem;
+      color: var(--color-muted-text);
     }
     .processing-step .processing-canvas {
       width: 100%;
       height: auto;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      background: #f9f9f9;
+      border: 1px solid var(--color-processing-canvas-border);
+      border-radius: 8px;
+      background: var(--color-processing-canvas-bg);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
     }
     .processing-step.step-original .processing-canvas { border-color: #4caf50; }
     .processing-step.step-gray .processing-canvas { border-color: #607d8b; }

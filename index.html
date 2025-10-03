@@ -40,6 +40,21 @@
       --shadow-card: 0 10px 24px rgba(15, 23, 42, 0.12);
       --shadow-button-primary: 0 8px 16px rgba(79, 70, 229, 0.35);
       --shadow-button-primary-hover: 0 12px 20px rgba(79, 70, 229, 0.28);
+      --color-sample-border: #cbd5f5;
+      --color-sample-bg-start: #f8faff;
+      --color-sample-bg-end: #eef2ff;
+      --color-sample-button-bg: #ffffff;
+      --color-sample-button-border: #cbd5f5;
+      --color-sample-button-text: #1f2933;
+      --color-sample-button-hover-bg: rgba(99, 102, 241, 0.12);
+      --color-sample-button-hover-text: #312e81;
+      --color-processing-surface: var(--color-surface);
+      --color-processing-border: rgba(148, 163, 184, 0.35);
+      --color-processing-header-start: #eef2ff;
+      --color-processing-header-end: #f8fafc;
+      --color-processing-toggle-disabled: #9ca3af;
+      --color-processing-canvas-border: rgba(148, 163, 184, 0.35);
+      --color-processing-canvas-bg: #f8fafc;
     }
 
     [data-theme="dark"] {
@@ -70,6 +85,21 @@
       --shadow-card: 0 18px 36px rgba(2, 6, 23, 0.55);
       --shadow-button-primary: 0 10px 24px rgba(99, 102, 241, 0.45);
       --shadow-button-primary-hover: 0 12px 28px rgba(129, 140, 248, 0.5);
+      --color-sample-border: rgba(129, 140, 248, 0.65);
+      --color-sample-bg-start: rgba(79, 70, 229, 0.22);
+      --color-sample-bg-end: rgba(30, 27, 75, 0.65);
+      --color-sample-button-bg: rgba(17, 24, 39, 0.85);
+      --color-sample-button-border: rgba(129, 140, 248, 0.5);
+      --color-sample-button-text: #e0e7ff;
+      --color-sample-button-hover-bg: rgba(99, 102, 241, 0.32);
+      --color-sample-button-hover-text: #f8fafc;
+      --color-processing-surface: rgba(17, 24, 39, 0.85);
+      --color-processing-border: rgba(99, 102, 241, 0.45);
+      --color-processing-header-start: rgba(79, 70, 229, 0.35);
+      --color-processing-header-end: rgba(30, 41, 59, 0.8);
+      --color-processing-toggle-disabled: rgba(148, 163, 184, 0.45);
+      --color-processing-canvas-border: rgba(99, 102, 241, 0.45);
+      --color-processing-canvas-bg: rgba(15, 23, 42, 0.75);
     }
 
     html {
@@ -269,8 +299,10 @@
       margin-top: 28px;
       padding: 20px clamp(16px, 4vw, 24px);
       border-radius: 16px;
-      border: 1px dashed #cbd5f5;
-      background: linear-gradient(135deg, #f8faff, #eef2ff);
+      border: 1px dashed var(--color-sample-border);
+      background: linear-gradient(135deg, var(--color-sample-bg-start), var(--color-sample-bg-end));
+      box-shadow: var(--shadow-card);
+      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
     .test-image-picker__intro {
@@ -286,7 +318,7 @@
 
     .test-image-picker__description {
       margin: 0;
-      color: #475569;
+      color: var(--color-subtle-text);
       font-size: 0.95rem;
       max-width: 62ch;
     }
@@ -299,32 +331,33 @@
     }
 
     .test-image-button {
-      border: 1px solid #cbd5f5;
-      background: #ffffff;
-      color: #1f2933;
+      border: 1px solid var(--color-sample-button-border);
+      background: var(--color-sample-button-bg);
+      color: var(--color-sample-button-text);
       padding: 10px 20px;
       border-radius: 12px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+      box-shadow: var(--shadow-card);
     }
 
     .test-image-button:hover {
-      background: rgba(99, 102, 241, 0.12);
-      color: #312e81;
+      background: var(--color-sample-button-hover-bg);
+      color: var(--color-sample-button-hover-text);
       transform: translateY(-1px);
     }
 
     .test-image-button:focus-visible {
-      outline: 2px solid #4f46e5;
+      outline: 2px solid var(--color-accent);
       outline-offset: 2px;
     }
 
     .test-image-button--active {
-      background: #4f46e5;
-      color: #ffffff;
-      border-color: #4f46e5;
-      box-shadow: 0 10px 24px rgba(79, 70, 229, 0.25);
+      background: var(--color-accent);
+      color: var(--color-accent-contrast);
+      border-color: var(--color-accent);
+      box-shadow: var(--shadow-button-primary);
     }
 
     .hint-tuning-card__toggle:disabled {
