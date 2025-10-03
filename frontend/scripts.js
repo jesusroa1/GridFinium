@@ -1203,7 +1203,7 @@ function handleOverlayClick(event) {
     y: clamp(Math.round(displayY * scaleY), 0, Math.max(0, originalHeight - 1)),
   };
 
-  state.lastHintPixel = { ...targetPoint };
+  state.lastHintPixel = targetPoint;
   runHintSelection(state);
 }
 
