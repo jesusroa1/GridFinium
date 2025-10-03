@@ -8,17 +8,17 @@ const TEST_IMAGES = Object.freeze([
   {
     id: 'test-image-mouse',
     label: 'Mouse on paper',
-    src: 'frontend/test-images/mouse.png',
+    src: 'frontend/test-images/mouse.png.jpeg',
   },
   {
     id: 'test-image-remote',
     label: 'Remote on paper',
-    src: 'frontend/test-images/remote.png',
+    src: 'frontend/test-images/remote.png.jpeg',
   },
   {
     id: 'test-image-coaster',
     label: 'Coaster top on paper',
-    src: 'frontend/test-images/coaster-top.png',
+    src: 'frontend/test-images/coaster-top.png.jpeg',
   },
 ]);
 
