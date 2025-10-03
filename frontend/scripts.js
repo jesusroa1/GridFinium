@@ -57,6 +57,10 @@ const HINT_TUNING_DEFAULTS = Object.freeze({
   paperExclusionTolerance: 0.1,
   showProcessingSteps: true,
   enableErodeStep: true,
+  enableThresholdBranch: true,
+  thresholdMode: 'otsu', // 'otsu' | 'adaptive'
+  morphCloseSize: 3,
+  morphOpenSize: 3,
 });
 
 const HINT_TUNING_INPUT_IDS = Object.freeze({
@@ -1509,9 +1513,40 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred', baseStepOptions);
   }
 
-  let edges;
-  let cannyLow = tuning.cannyLowThreshold;
-  let cannyHigh = tuning.cannyHighThreshold;
+  let bin = null;
+  if (tuning.enableThresholdBranch) {
+    bin = new cv.Mat();
+    if (tuning.thresholdMode === 'adaptive') {
+      cv.adaptiveThreshold(
+        blurred,
+        bin,
+        255,
+        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY_INV,
+        11,
+        2,
+      );
+    } else {
+      cv.threshold(blurred, bin, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+    }
+
+    if (tuning.morphCloseSize > 0) {
+      const kClose = cv.Mat.ones(tuning.morphCloseSize, tuning.morphCloseSize, cv.CV_8U);
+      cv.morphologyEx(bin, bin, cv.MORPH_CLOSE, kClose);
+      kClose.delete();
+    }
+    if (tuning.morphOpenSize > 0) {
+      const kOpen = cv.Mat.ones(tuning.morphOpenSize, tuning.morphOpenSize, cv.CV_8U);
+      cv.morphologyEx(bin, bin, cv.MORPH_OPEN, kOpen);
+      kOpen.delete();
+    }
+
+    if (renderStep) {
+      renderStep('Hint Binary - Threshold', bin, 'step-binary', baseStepOptions);
+    }
+  }
+
+  const edges = new cv.Mat();
   // When users drop a hint we do a separate pass to highlight the shape around
   // that point. The thresholds and morphology settings are sourced from the
   // interactive tuning panel so you can steer which edges survive long enough
@@ -1552,9 +1587,10 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   }
   kernel.delete();
 
+  const contourSource = bin || edges;
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+  cv.findContours(contourSource, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
   const minArea = workingSource.rows * workingSource.cols * tuning.minAreaRatio;
   const testPoint = new cv.Point(point.x, point.y);
@@ -1714,6 +1750,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
 
   gray.delete();
   blurred.delete();
+  if (bin) bin.delete();
   edges.delete();
   contours.delete();
   hierarchy.delete();
