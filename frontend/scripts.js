@@ -1574,7 +1574,8 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     renderStep(caption, edges, 'step-edges-raw', baseStepOptions);
   }
 
-  const kernel = cv.Mat.ones(tuning.kernelSize, tuning.kernelSize, cv.CV_8U);
+  const kSize = Math.max(1, tuning.kernelSize | 0);
+  const kernel = cv.Mat.ones(kSize, kSize, cv.CV_8U);
   cv.dilate(edges, edges, kernel);
   if (renderStep) {
     renderStep('Hint Dilated Edges - cv.dilate()', edges, 'step-edges-dilated', baseStepOptions);
