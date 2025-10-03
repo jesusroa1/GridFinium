@@ -1752,7 +1752,10 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
 
   gray.delete();
   blurred.delete();
-  if (bin) bin.delete();
+  if (bin) {
+    bin.delete();
+    bin = null;
+  }
   edges.delete();
   contours.delete();
   hierarchy.delete();
