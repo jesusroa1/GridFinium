@@ -1886,12 +1886,27 @@ function getHintTuningConfig() {
 
   const enableErodeStep = hintTuningState.enableErodeStep;
   const enableAutoCanny = hintTuningState.enableAutoCanny;
+  const enableThresholdBranch = hintTuningState.enableThresholdBranch;
+  const thresholdModeCandidate = hintTuningState.thresholdMode;
+  const morphCloseCandidate = Math.round(hintTuningState.morphCloseSize);
+  const morphOpenCandidate = Math.round(hintTuningState.morphOpenSize);
   const autoCannySigmaCandidate = Number(hintTuningState.autoCannySigma);
   const autoCannySigma = clamp(
     Number.isFinite(autoCannySigmaCandidate) ? autoCannySigmaCandidate : HINT_TUNING_DEFAULTS.autoCannySigma,
     0,
     1,
   );
+  const morphCloseSize = clamp(
+    Number.isFinite(morphCloseCandidate) ? morphCloseCandidate : HINT_TUNING_DEFAULTS.morphCloseSize,
+    0,
+    99,
+  );
+  const morphOpenSize = clamp(
+    Number.isFinite(morphOpenCandidate) ? morphOpenCandidate : HINT_TUNING_DEFAULTS.morphOpenSize,
+    0,
+    99,
+  );
+  const thresholdMode = thresholdModeCandidate === 'adaptive' ? 'adaptive' : 'otsu';
 
   return {
     cannyLowThreshold: low,
@@ -1902,6 +1917,13 @@ function getHintTuningConfig() {
     enableErodeStep: enableErodeStep !== undefined ? Boolean(enableErodeStep) : HINT_TUNING_DEFAULTS.enableErodeStep,
     enableAutoCanny: enableAutoCanny !== undefined ? Boolean(enableAutoCanny) : HINT_TUNING_DEFAULTS.enableAutoCanny,
     autoCannySigma,
+    enableThresholdBranch:
+      enableThresholdBranch !== undefined
+        ? Boolean(enableThresholdBranch)
+        : HINT_TUNING_DEFAULTS.enableThresholdBranch,
+    thresholdMode,
+    morphCloseSize,
+    morphOpenSize,
   };
 }
 
@@ -2144,6 +2166,10 @@ function applyHintTuningState(partial, options = {}) {
     enableErodeStep: Boolean(normalized.enableErodeStep),
     enableAutoCanny: Boolean(normalized.enableAutoCanny),
     autoCannySigma: normalized.autoCannySigma,
+    enableThresholdBranch: Boolean(normalized.enableThresholdBranch),
+    thresholdMode: normalized.thresholdMode,
+    morphCloseSize: normalized.morphCloseSize,
+    morphOpenSize: normalized.morphOpenSize,
   };
 
   if (options.rerunSelection !== false) {
@@ -2152,6 +2178,23 @@ function applyHintTuningState(partial, options = {}) {
 
   return normalized;
 }
+
+function setupHintTuningDebugApi() {
+  if (typeof window === 'undefined') return;
+
+  const namespace = window.GridFinium ?? {};
+  const hintApi = namespace.hintTuning ?? {};
+
+  hintApi.getState = () => ({ ...hintTuningState });
+  hintApi.getConfig = () => ({ ...getHintTuningConfig() });
+  hintApi.apply = (overrides = {}, options = {}) => applyHintTuningState(overrides, options);
+  hintApi.reset = (options = {}) => applyHintTuningState({ ...HINT_TUNING_DEFAULTS }, options);
+
+  namespace.hintTuning = hintApi;
+  window.GridFinium = namespace;
+}
+
+setupHintTuningDebugApi();
 
 function syncProcessingStepsVisibility() {
   const visible = Boolean(hintTuningState.showProcessingSteps);
