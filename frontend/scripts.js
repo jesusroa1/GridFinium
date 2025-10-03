@@ -108,6 +108,7 @@ if (!defaultPreviewLoaded) {
 
 setupTabs();
 setupHintTuningControls();
+setupThemeToggle();
 
 const stlDesignerOptions = {
   viewerId: 'stl-viewer',
@@ -137,22 +138,11 @@ function setupThemeToggle() {
 
   const applyTheme = (theme) => {
     const normalizedTheme = theme === COLOR_THEMES.DARK ? COLOR_THEMES.DARK : COLOR_THEMES.LIGHT;
+    const isDark = normalizedTheme === COLOR_THEMES.DARK;
     rootElement.setAttribute('data-theme', normalizedTheme);
-    themeToggleButton.setAttribute('aria-pressed', String(normalizedTheme === COLOR_THEMES.DARK));
-    themeToggleButton.setAttribute(
-      'aria-label',
-      normalizedTheme === COLOR_THEMES.DARK ? 'Switch to light mode' : 'Switch to dark mode',
-    );
-
-    const icon = themeToggleButton.querySelector('.theme-toggle__icon');
-    const label = themeToggleButton.querySelector('.theme-toggle__label');
-    if (icon) {
-      icon.textContent = normalizedTheme === COLOR_THEMES.DARK ? '🌙' : '🌞';
-    }
-
-    if (label) {
-      label.textContent = normalizedTheme === COLOR_THEMES.DARK ? 'Dark mode' : 'Light mode';
-    }
+    themeToggleButton.setAttribute('aria-pressed', String(isDark));
+    themeToggleButton.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+    themeToggleButton.classList.toggle('theme-toggle--dark', isDark);
   };
 
   const storedTheme = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
