@@ -28,3 +28,6 @@ __pycache__/
 # Logs
 logs/
 *.log
+
+# Frontend sample assets
+frontend/test-images/*.png
