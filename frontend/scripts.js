@@ -1546,7 +1546,9 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     }
   }
 
-  const edges = new cv.Mat();
+  let edges = null;
+  let cannyLow = tuning.cannyLowThreshold;
+  let cannyHigh = tuning.cannyHighThreshold;
   // When users drop a hint we do a separate pass to highlight the shape around
   // that point. The thresholds and morphology settings are sourced from the
   // interactive tuning panel so you can steer which edges survive long enough
