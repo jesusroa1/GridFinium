@@ -86,11 +86,9 @@ const NORMALIZED_GEOMETRY_EPSILON = 1e-6;
 let processingStepsIdCounter = 0;
 let hintTuningState = { ...HINT_TUNING_DEFAULTS };
 
-// Grab the upload input and preview container once the page loads.
-const fileInput = document.getElementById(DOM_IDS.input);
-const previewContainer = document.getElementById(DOM_IDS.preview);
-// Start preparing OpenCV right away so we can await it later.
-const cvReady = waitForOpenCv();
+let fileInput = null;
+let previewContainer = null;
+let cvReady = null;
 let activePreviewToken = 0;
 let activeImageMat = null;
 let activeOverlayElement = null;
@@ -100,47 +98,63 @@ const overlayStateMap = new WeakMap();
 const overlayResetControlMap = new WeakMap();
 let testImageButtons = [];
 let activeTestImageId = null;
-
 let defaultPreviewLoaded = false;
 
-// Only hook up the change handler when the key DOM nodes exist.
-if (fileInput && previewContainer) {
-  fileInput.addEventListener('change', handleFileSelection);
-  defaultPreviewLoaded = setupTestImagePicker();
-} else {
-  console.warn('GridFinium: required DOM elements not found.');
+export function bootGridFinium() {
+  fileInput = document.getElementById(DOM_IDS.input);
+  previewContainer = document.getElementById(DOM_IDS.preview);
+  cvReady = waitForOpenCv();
+  activePreviewToken = 0;
+  activeImageMat = null;
+  activeOverlayElement = null;
+  activePaperProcessingSteps = null;
+  activeHintProcessingSteps = null;
+  testImageButtons = [];
+  activeTestImageId = null;
+  defaultPreviewLoaded = false;
+  processingStepsIdCounter = 0;
+  hintTuningState = { ...HINT_TUNING_DEFAULTS };
+
+  if (fileInput && previewContainer) {
+    fileInput.removeEventListener('change', handleFileSelection);
+    fileInput.addEventListener('change', handleFileSelection);
+    defaultPreviewLoaded = setupTestImagePicker();
+  } else {
+    console.warn('GridFinium: required DOM elements not found.');
+  }
+
+  if (!defaultPreviewLoaded) {
+    loadDefaultPreview(DEFAULT_IMAGE_PATH);
+  }
+
+  setupTabs();
+  setupHintTuningControls();
+  setupThemeToggle();
+
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+  }
+
+  const stlDesignerOptions = {
+    viewerId: 'stl-viewer',
+    widthInputId: 'stl-width',
+    depthInputId: 'stl-depth',
+    heightInputId: 'stl-height',
+    summaryId: 'stl-summary',
+    downloadButtonId: 'stl-download',
+    resetButtonId: 'stl-reset',
+  };
+
+  ensureThreeJs()
+    .then(() => {
+      initStlDesigner(stlDesignerOptions);
+    })
+    .catch((error) => {
+      console.error('GridFinium: unable to load Three.js from any CDN source. Falling back to canvas renderer.', error);
+      initStlDesigner(stlDesignerOptions);
+    });
 }
-
-if (!defaultPreviewLoaded) {
-  loadDefaultPreview(DEFAULT_IMAGE_PATH);
-}
-
-setupTabs();
-setupHintTuningControls();
-setupThemeToggle();
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('keydown', handleGlobalKeyDown, true);
-}
-
-const stlDesignerOptions = {
-  viewerId: 'stl-viewer',
-  widthInputId: 'stl-width',
-  depthInputId: 'stl-depth',
-  heightInputId: 'stl-height',
-  summaryId: 'stl-summary',
-  downloadButtonId: 'stl-download',
-  resetButtonId: 'stl-reset',
-};
-
-ensureThreeJs()
-  .then(() => {
-    initStlDesigner(stlDesignerOptions);
-  })
-  .catch((error) => {
-    console.error('GridFinium: unable to load Three.js from any CDN source. Falling back to canvas renderer.', error);
-    initStlDesigner(stlDesignerOptions);
-  });
 
 function setupThemeToggle() {
   const themeToggleButton = document.getElementById('theme-toggle');
