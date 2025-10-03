@@ -141,6 +141,26 @@ You can now experiment with these numbers directly from the **Tuning Parameters*
 panel on the Image Tools tab—no code edits required. Adjust the sliders, click
 the preview again, and watch the hint selection update instantly.
 
+### Developer toggles for regression tests
+When you need to flip hidden switches such as `enableAutoCanny` or
+`enableThresholdBranch`, open the browser console and use the new debugging
+helpers:
+
+```js
+// Inspect the live hint tuning configuration (normalized values)
+window.GridFinium.hintTuning.getConfig();
+
+// Apply overrides and immediately rerun the hint outline selection
+window.GridFinium.hintTuning.apply({ enableAutoCanny: false });
+
+// Reset everything back to the defaults published in scripts.js
+window.GridFinium.hintTuning.reset();
+```
+
+Each call updates the internal state used by the click-to-outline pipeline, so
+you can quickly regression test the Canny and threshold branches without
+digging through the source file.
+
 ## SVG
 To turn the detected outline into an SVG that is sized for real-world use, we
 compare the paper’s pixel perimeter against the actual letter sheet perimeter.
