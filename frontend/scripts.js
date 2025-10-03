@@ -61,6 +61,7 @@ const HINT_TUNING_DEFAULTS = Object.freeze({
   thresholdMode: 'otsu', // 'otsu' | 'adaptive'
   morphCloseSize: 3,
   morphOpenSize: 3,
+  fusionMode: 'edge', // 'edge' | 'threshold' | 'and' | 'or'
 });
 
 const HINT_TUNING_INPUT_IDS = Object.freeze({
@@ -71,6 +72,7 @@ const HINT_TUNING_INPUT_IDS = Object.freeze({
   paperTolerance: 'hint-paper-tolerance',
   showSteps: 'hint-show-steps',
   enableErode: 'hint-enable-erode',
+  fusionMode: 'hint-fusion-mode',
 });
 
 const POLL_INTERVAL_MS = 50;
@@ -1968,10 +1970,12 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     renderStep('Hint Blurred - cv.GaussianBlur()', blurred, 'step-blurred', baseStepOptions);
   }
 
+  const shouldComputeThreshold = Boolean(tuning.enableThresholdBranch || tuning.fusionMode !== 'edge');
   let bin = null;
-  if (tuning.enableThresholdBranch) {
+  if (shouldComputeThreshold) {
     bin = new cv.Mat();
-    if (tuning.thresholdMode === 'adaptive') {
+    const isAdaptive = tuning.thresholdMode === 'adaptive';
+    if (isAdaptive) {
       cv.adaptiveThreshold(
         blurred,
         bin,
@@ -1997,7 +2001,8 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     }
 
     if (renderStep) {
-      renderStep('Hint Binary - Threshold', bin, 'step-binary', baseStepOptions);
+      const caption = isAdaptive ? 'Threshold Map\nmode=Adaptive Gaussian' : 'Threshold Map\nmode=Otsu';
+      renderStep(caption, bin, 'step-binary', baseStepOptions);
     }
   }
 
@@ -2025,7 +2030,7 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
       }
       return value;
     };
-    const caption = `Hint Edge Map - Canny\nlow=${formatThreshold(cannyLow)}, high=${formatThreshold(cannyHigh)}`;
+    const caption = `Edge Map\nlow=${formatThreshold(cannyLow)}, high=${formatThreshold(cannyHigh)}`;
     renderStep(caption, edges, 'step-edges-raw', baseStepOptions);
   }
 
@@ -2045,7 +2050,31 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
   }
   kernel.delete();
 
-  const contourSource = bin || edges;
+  let contourSource = edges;
+  let fused = null;
+  const fusionMode = tuning.fusionMode;
+  const hasThreshold = bin instanceof cv.Mat;
+  if (fusionMode === 'threshold' && hasThreshold) {
+    contourSource = bin;
+  } else if ((fusionMode === 'and' || fusionMode === 'or') && hasThreshold) {
+    fused = new cv.Mat();
+    if (fusionMode === 'and') {
+      cv.bitwise_and(edges, bin, fused);
+    } else {
+      cv.bitwise_or(edges, bin, fused);
+    }
+    if (renderStep) {
+      const caption = fusionMode === 'and' ? 'Combined (AND)' : 'Combined (OR)';
+      renderStep(caption, fused, 'step-fused-map', baseStepOptions);
+    }
+    contourSource = fused;
+  } else {
+    contourSource = edges;
+  }
+
+  if ((fusionMode === 'and' || fusionMode === 'or') && renderStep && !hasThreshold) {
+    renderStep('Combined (AND/OR) - threshold map unavailable', edges, 'step-fused-map', baseStepOptions);
+  }
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   cv.findContours(contourSource, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
@@ -2221,6 +2250,10 @@ function findContourAtPoint(sourceMat, point, showStep, displayInfo, paperOutlin
     bin.delete();
     bin = null;
   }
+  if (fused) {
+    fused.delete();
+    fused = null;
+  }
   edges.delete();
   contours.delete();
   hierarchy.delete();
@@ -2370,6 +2403,11 @@ function getHintTuningConfig() {
     0,
     1,
   );
+  const fusionModeCandidate = hintTuningState.fusionMode;
+  const allowedFusionModes = new Set(['edge', 'threshold', 'and', 'or']);
+  const fusionMode = allowedFusionModes.has(fusionModeCandidate)
+    ? fusionModeCandidate
+    : HINT_TUNING_DEFAULTS.fusionMode;
   const morphCloseSize = clamp(
     Number.isFinite(morphCloseCandidate) ? morphCloseCandidate : HINT_TUNING_DEFAULTS.morphCloseSize,
     0,
@@ -2398,6 +2436,7 @@ function getHintTuningConfig() {
     thresholdMode,
     morphCloseSize,
     morphOpenSize,
+    fusionMode,
   };
 }
 
@@ -2495,6 +2534,7 @@ function setupHintTuningControls() {
   const paperToleranceInput = document.getElementById(HINT_TUNING_INPUT_IDS.paperTolerance);
   const showStepsInput = document.getElementById(HINT_TUNING_INPUT_IDS.showSteps);
   const erodeInput = document.getElementById(HINT_TUNING_INPUT_IDS.enableErode);
+  const fusionModeInput = document.getElementById(HINT_TUNING_INPUT_IDS.fusionMode);
 
   if (tuningContent && tuningToggle) {
     let tuningExpanded = false;
@@ -2522,7 +2562,18 @@ function setupHintTuningControls() {
     requestAnimationFrame(syncTuningContent);
   }
 
-  if (!lowInput || !highInput || !kernelInput || !minAreaInput || !paperToleranceInput || !showStepsInput || !erodeInput) return;
+  if (
+    !lowInput
+    || !highInput
+    || !kernelInput
+    || !minAreaInput
+    || !paperToleranceInput
+    || !showStepsInput
+    || !erodeInput
+    || !fusionModeInput
+  ) {
+    return;
+  }
 
   const syncInputsFromState = () => {
     const config = getHintTuningConfig();
@@ -2553,6 +2604,7 @@ function setupHintTuningControls() {
     paperToleranceInput.value = formattedTolerance;
     showStepsInput.checked = Boolean(hintTuningState.showProcessingSteps);
     erodeInput.checked = Boolean(hintTuningState.enableErodeStep);
+    fusionModeInput.value = config.fusionMode;
   };
 
   // Ensure the live state starts from the published defaults so the UI always
@@ -2624,6 +2676,12 @@ function setupHintTuningControls() {
     applyHintTuningState({ enableErodeStep: erodeInput.checked });
     syncInputsFromState();
   });
+
+  fusionModeInput.addEventListener('change', () => {
+    const value = fusionModeInput.value;
+    applyHintTuningState({ fusionMode: value });
+    syncInputsFromState();
+  });
 }
 
 function applyHintTuningState(partial, options = {}) {
@@ -2644,6 +2702,7 @@ function applyHintTuningState(partial, options = {}) {
     thresholdMode: normalized.thresholdMode,
     morphCloseSize: normalized.morphCloseSize,
     morphOpenSize: normalized.morphOpenSize,
+    fusionMode: normalized.fusionMode,
   };
 
   if (options.rerunSelection !== false) {
