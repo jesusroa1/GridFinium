@@ -6,6 +6,7 @@ import {
   attachPaperOverlay,
   applyHintTuningState,
   getHintTuningConfig,
+  OVERLAY_INTERACTION_MODES,
 } from './ObjectOutlining.js';
 import { ensureThreeJs, initStlDesigner } from './STLLogic.js';
 
@@ -349,8 +350,14 @@ function createPreviewResultSection(container) {
   overlay.className = 'preview-result__overlay';
   overlay.tabIndex = 0;
   overlay.setAttribute('role', 'application');
-  overlay.setAttribute('aria-label', 'Image overlay: left-click to add hints; right-click or Ctrl/Cmd-click to draw exclusion zones; double-click to finish a zone; press Escape to cancel drawing.');
-  overlay.setAttribute('title', 'Left-click to add hints. Right-click or Ctrl/Cmd-click to draw exclusion zones. Double-click to close a zone. Press Escape to cancel drawing.');
+  overlay.setAttribute(
+    'aria-label',
+    'Image overlay: use the click mode toggle to choose between adding hints or drawing exclusion zones. Right-click or Ctrl/Cmd-click also draws exclusions. Double-click to finish a zone; press Escape to cancel drawing.',
+  );
+  overlay.setAttribute(
+    'title',
+    'Use the click mode toggle to decide whether left-click adds hints or draws exclusion zones. Right-click or Ctrl/Cmd-click also draws exclusions. Double-click to close a zone. Press Escape to cancel drawing.',
+  );
   overlay.addEventListener('contextmenu', (event) => {
     event.preventDefault();
   });
@@ -362,6 +369,33 @@ function createPreviewResultSection(container) {
 
   const controls = document.createElement('div');
   controls.className = 'preview-result__controls';
+
+  const modeToggle = document.createElement('div');
+  modeToggle.className = 'preview-result__mode-toggle';
+  modeToggle.setAttribute('role', 'group');
+  modeToggle.setAttribute('aria-label', 'Click mode');
+
+  const modeLabel = document.createElement('span');
+  modeLabel.className = 'preview-result__mode-label';
+  modeLabel.textContent = 'Click adds:';
+  modeToggle.appendChild(modeLabel);
+
+  const hintModeButton = document.createElement('button');
+  hintModeButton.type = 'button';
+  hintModeButton.className = 'preview-result__mode-button';
+  hintModeButton.textContent = 'Hints';
+  hintModeButton.setAttribute('aria-pressed', 'true');
+  hintModeButton.disabled = true;
+
+  const exclusionModeButton = document.createElement('button');
+  exclusionModeButton.type = 'button';
+  exclusionModeButton.className = 'preview-result__mode-button';
+  exclusionModeButton.textContent = 'Exclusions';
+  exclusionModeButton.setAttribute('aria-pressed', 'false');
+  exclusionModeButton.disabled = true;
+
+  modeToggle.appendChild(hintModeButton);
+  modeToggle.appendChild(exclusionModeButton);
 
   const resetHintsButton = document.createElement('button');
   resetHintsButton.type = 'button';
@@ -387,6 +421,29 @@ function createPreviewResultSection(container) {
   resetExclusionsButton.setAttribute('aria-label', 'Remove all exclusion zones');
   resetExclusionsButton.setAttribute('title', 'Remove all exclusion zones');
 
+  const updateModeButtons = (activeMode) => {
+    const normalized = activeMode === OVERLAY_INTERACTION_MODES.EXCLUSION
+      ? OVERLAY_INTERACTION_MODES.EXCLUSION
+      : OVERLAY_INTERACTION_MODES.HINT;
+    hintModeButton.setAttribute('aria-pressed', normalized === OVERLAY_INTERACTION_MODES.HINT ? 'true' : 'false');
+    exclusionModeButton.setAttribute('aria-pressed', normalized === OVERLAY_INTERACTION_MODES.EXCLUSION ? 'true' : 'false');
+    hintModeButton.disabled = false;
+    exclusionModeButton.disabled = false;
+  };
+
+  hintModeButton.addEventListener('click', () => {
+    const controller = overlayControllers.get(overlay);
+    const mode = controller?.setInteractionMode?.(OVERLAY_INTERACTION_MODES.HINT);
+    updateModeButtons(mode ?? OVERLAY_INTERACTION_MODES.HINT);
+  });
+
+  exclusionModeButton.addEventListener('click', () => {
+    const controller = overlayControllers.get(overlay);
+    const mode = controller?.setInteractionMode?.(OVERLAY_INTERACTION_MODES.EXCLUSION);
+    updateModeButtons(mode ?? OVERLAY_INTERACTION_MODES.EXCLUSION);
+  });
+
+  controls.appendChild(modeToggle);
   controls.appendChild(resetHintsButton);
   controls.appendChild(resetExclusionsButton);
   section.appendChild(controls);
@@ -396,6 +453,7 @@ function createPreviewResultSection(container) {
     const exclusionCount = Number(detail.exclusionCount) || 0;
     resetHintsButton.disabled = hintCount === 0;
     resetExclusionsButton.disabled = exclusionCount === 0;
+    updateModeButtons(detail.interactionMode ?? OVERLAY_INTERACTION_MODES.HINT);
   });
   container.appendChild(section);
 
@@ -1063,6 +1121,50 @@ function ensureProcessingStyles() {
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
+    }
+    .preview-result__mode-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--color-surface-subtle);
+      border: 1px solid var(--color-border-soft);
+    }
+    .preview-result__mode-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--color-muted-text);
+    }
+    .preview-result__mode-button {
+      border: none;
+      background: transparent;
+      color: var(--color-muted-text);
+      padding: 6px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+    }
+    .preview-result__mode-button[aria-pressed="true"] {
+      background: var(--color-accent);
+      color: var(--color-accent-contrast);
+      box-shadow: var(--shadow-button-primary);
+      transform: translateY(-1px);
+    }
+    .preview-result__mode-button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .preview-result__mode-button:not(:disabled):hover,
+    .preview-result__mode-button:not(:disabled):focus-visible {
+      background: var(--color-accent-hover);
+      color: var(--color-accent-contrast);
+      outline: none;
+      box-shadow: var(--shadow-button-primary-hover);
+      transform: translateY(-1px);
     }
     .preview-result__button {
       border: none;
