@@ -4,6 +4,11 @@ const MAX_DISPLAY_CONTOURS = 5;
 const PERIMETER_COMPARISON_EPSILON = 1e-2;
 const NORMALIZED_GEOMETRY_EPSILON = 1e-6;
 
+export const OVERLAY_INTERACTION_MODES = Object.freeze({
+  HINT: 'hint',
+  EXCLUSION: 'exclusion',
+});
+
 export const HINT_TUNING_DEFAULTS = Object.freeze({
   cannyLowThreshold: 10,
   cannyHighThreshold: 50,
@@ -73,6 +78,7 @@ export function attachPaperOverlay(overlay, corners, renderInfo) {
     hintPoints: [],
     lastHintPixel: null,
     overlay,
+    interactionMode: OVERLAY_INTERACTION_MODES.HINT,
   };
 
   overlayStateMap.set(overlay, state);
@@ -343,6 +349,12 @@ function handleOverlayClick(event) {
   const state = overlayStateMap.get(overlay);
   if (!state || !state.displayInfo) return;
 
+  if (state.interactionMode === OVERLAY_INTERACTION_MODES.EXCLUSION) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
   const handleTarget = event.target?.closest?.('.preview-result__handle');
   if (handleTarget) return;
 
@@ -371,13 +383,19 @@ function handleOverlayClick(event) {
 }
 
 function handleOverlayPointerDown(event) {
-  const isRightClick = event.button === 2;
-  const isModifierClick = event.button === 0 && (event.ctrlKey || event.metaKey);
-  if (!isRightClick && !isModifierClick) return;
-
   const overlay = event.currentTarget;
   const state = overlayStateMap.get(overlay);
   if (!state) return;
+
+  const isRightClick = event.button === 2;
+  const isModifierClick = event.button === 0 && (event.ctrlKey || event.metaKey);
+  const isLeftClickWithExclusionMode =
+    event.button === 0
+    && !event.ctrlKey
+    && !event.metaKey
+    && state.interactionMode === OVERLAY_INTERACTION_MODES.EXCLUSION;
+
+  if (!isRightClick && !isModifierClick && !isLeftClickWithExclusionMode) return;
 
   const handleTarget = event.target?.closest?.('.preview-result__handle');
   if (handleTarget) return;
@@ -637,6 +655,7 @@ function notifyOverlayStateChange(overlay, state) {
     exclusionCount: Array.isArray(state?.exclusions) ? state.exclusions.length : 0,
     hasSelection: state?.selectionPath?.dataset?.visible === 'true',
     hasActiveExclusion: Array.isArray(state?.activeExclusion) && state.activeExclusion.length > 0,
+    interactionMode: state?.interactionMode || OVERLAY_INTERACTION_MODES.HINT,
   };
 
   overlay.dispatchEvent(new CustomEvent('gridfinium:overlay-state', { detail }));
@@ -665,6 +684,29 @@ function getOverlayController(overlay) {
     getState: () => {
       const state = overlayStateMap.get(overlay);
       return state ? { ...state } : null;
+    },
+    setInteractionMode: (mode) => {
+      const state = overlayStateMap.get(overlay);
+      if (!state) return null;
+      const normalized = mode === OVERLAY_INTERACTION_MODES.EXCLUSION
+        ? OVERLAY_INTERACTION_MODES.EXCLUSION
+        : OVERLAY_INTERACTION_MODES.HINT;
+      if (state.interactionMode === normalized) {
+        return state.interactionMode;
+      }
+      state.interactionMode = normalized;
+      if (normalized !== OVERLAY_INTERACTION_MODES.EXCLUSION) {
+        const canceled = cancelActiveExclusion(state);
+        if (canceled) {
+          rerunHintSelection();
+        }
+      }
+      notifyOverlayStateChange(overlay, state);
+      return state.interactionMode;
+    },
+    getInteractionMode: () => {
+      const state = overlayStateMap.get(overlay);
+      return state?.interactionMode || OVERLAY_INTERACTION_MODES.HINT;
     },
   };
 
