@@ -18,7 +18,7 @@ export const HINT_TUNING_DEFAULTS = Object.freeze({
   thresholdMode: 'otsu', // 'otsu' | 'adaptive'
   morphCloseSize: 3,
   morphOpenSize: 3,
-  fusionMode: 'edge', // 'edge' | 'threshold' | 'and' | 'or'
+  fusionMode: 'and', // 'edge' | 'threshold' | 'and' | 'or'
 });
 
 let hintTuningState = { ...HINT_TUNING_DEFAULTS };
