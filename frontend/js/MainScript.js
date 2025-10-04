@@ -201,12 +201,15 @@ async function processImageFromSource(imageSrc) {
   } = createPreviewResultSection(previewContainer);
 
   const imageElement = new Image();
-  const paperSteps = createStepRenderer(previewContainer, { titleText: 'Paper Processing Steps' });
+  const paperSteps = createStepRenderer(previewContainer, {
+    titleText: 'Paper Processing Steps',
+    startExpanded: false,
+  });
   activePaperProcessingSteps = paperSteps;
   activeHintProcessingSteps = createStepRenderer(previewContainer, {
     titleText: 'Hint Processing Steps',
     hideWhenEmpty: true,
-    startExpanded: false,
+    startExpanded: true,
   });
   setHintProcessingStepsRenderer(activeHintProcessingSteps);
   syncProcessingStepsVisibility();
@@ -625,12 +628,12 @@ function syncProcessingStepsVisibility() {
   const shouldShowHintSteps = Boolean(hintConfig.showProcessingSteps);
 
   if (activePaperProcessingSteps) {
-    activePaperProcessingSteps.setExpanded(true);
+    activePaperProcessingSteps.setExpanded(false);
     activePaperProcessingSteps.setVisible(true);
   }
 
   if (activeHintProcessingSteps) {
-    activeHintProcessingSteps.setExpanded(false);
+    activeHintProcessingSteps.setExpanded(true);
     activeHintProcessingSteps.setVisible(shouldShowHintSteps);
   }
 }
