@@ -1,5 +1,7 @@
 # Documentations Instructions
 
+> For the frontend roadmap and testing plan, see [`PROJECT_PLAN.md`](PROJECT_PLAN.md).
+
 ## About:
 - Use mermaid flowcharts to add descriptions of how mermaid works
 - Use text where needed to seperate sections and provide descriptions
@@ -11,4 +13,3 @@ Add mermaid flowcharts with the how to into the readme.md
 Set up flowcharts so that a 14 year old can understand
  - 1: The codebase
  - 2: Logic in individual files
-

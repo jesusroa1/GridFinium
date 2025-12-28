@@ -1,5 +1,7 @@
 # GridFinium Frontend Guide
 
+> Looking for the current frontend roadmap? See [`PROJECT_PLAN.md`](PROJECT_PLAN.md).
+
 Welcome! This guide explains how the GridFinium frontend fits together using easy language and simple flowcharts. If you are around 14 years old and curious about how the project works, you are in the right place.
 
 ## How the codebase is organized
@@ -8,7 +10,7 @@ The project lives in a small folder with a handful of important files. Follow th
 ```mermaid
 flowchart TD
     A[Project Folder] --> B["<u>index.html</u><br/>Shapes the web page"]
-    A --> C["<u>scripts.js</u><br/>Adds interactive logic"]
+    A --> C["<u>js/MainScript.js</u><br/>Adds interactive logic"]
     A --> D["<u>readme.md</u><br/>Explains everything"]
     A --> E["<u>docs.md</u><br/>Documentation plan"]
 
@@ -16,7 +18,7 @@ flowchart TD
 
 ### What each part does
 - **index.html** sets up the basic layout of the page, similar to building the frame of a house.
-- **scripts.js** adds the behaviors, like placing the furniture and making buttons respond when clicked.
+- **js/MainScript.js** adds the behaviors, like placing the furniture and making buttons respond when clicked.
 - **docs.md** stores instructions about how to document the project.
 - **readme.md** (this file) shows you how the pieces fit together.
 
@@ -25,19 +27,19 @@ The next flowchart zooms in on the logic inside the HTML and JavaScript files an
 
 ```mermaid
 flowchart LR
-    H["index.html<br/>Loads page structure"] -->|Loads| S["scripts.js<br/>Listens for user actions"]
+    H["index.html<br/>Loads page structure"] -->|Loads| S["js/MainScript.js<br/>Listens for user actions"]
     S -->|Reads| G["HTML elements<br/>(like buttons and grid cells)"]
     S -->|Updates| V["Visual changes<br/>shown in the browser"]
 ```
 
 ### Step-by-step explanation
 1. **The browser reads `index.html`** and draws the page.
-2. **`scripts.js` runs right after** and looks for buttons, inputs, or grid cells to control.
+2. **`js/MainScript.js` runs right after** and looks for buttons, inputs, or grid cells to control.
 3. **When you interact with the page**, the script reacts by changing numbers, colors, or text.
 4. **The browser updates the view**, so you instantly see the result of what just happened.
 
-## scripts.js logic explained
-The JavaScript file is made of small functions that work together whenever you upload a picture of a sheet of paper.
+## MainScript.js logic explained
+The JavaScript entrypoint is made of small functions that work together whenever you upload a picture of a sheet of paper.
 
 ```mermaid
 flowchart TD
@@ -90,13 +92,13 @@ flowchart TD
 Modern phones can take photos that are thousands of pixels tall and wide. Showing that entire image inside the browser would
 force the canvas to hold all of those pixels even if the picture looks small on screen. On some devices—especially iPhones
 running Safari—pinching to zoom tells the browser to render the full-resolution canvas, which can quickly use too much memory
-and crash the page. To keep things smooth, `scripts.js` now shrinks anything bigger than about 1,280 pixels on its longest side
+and crash the page. To keep things smooth, `js/MainScript.js` now shrinks anything bigger than about 1,280 pixels on its longest side
 before drawing it. The paper detection still uses the original high-resolution pixels, but the preview stays lightweight and
 stable when you zoom in.
 
 ## Need to change something?
 - Update `index.html` if you want to change the layout or add new sections to the page.
-- Edit `scripts.js` if you want to change how the page behaves when someone clicks or types.
+- Edit `js/MainScript.js` if you want to change how the page behaves when someone clicks or types.
 - Keep this `readme.md` updated so future developers (and curious students) can follow along easily.
 
 Happy exploring and building!
@@ -132,7 +134,7 @@ Several numbers control which contour wins once a hint is supplied:
   winning the hint search. Increase it if the page still sneaks through, or
   lower it when nearby objects have a similar footprint to the paper.
 
-Adjusting these values in `findContourAtPoint` inside `scripts.js` lets you
+Adjusting these values in `findContourAtPoint` inside `js/MainScript.js` lets you
 fine-tune what is selected after a hint. Try lowering the thresholds first, and
 then tweak the kernel size or minimum area until the pink overlay hugs the
 coaster instead of the entire page.
@@ -153,7 +155,7 @@ window.GridFinium.hintTuning.getConfig();
 // Apply overrides and immediately rerun the hint outline selection
 window.GridFinium.hintTuning.apply({ enableAutoCanny: false });
 
-// Reset everything back to the defaults published in scripts.js
+// Reset everything back to the defaults published in js/MainScript.js
 window.GridFinium.hintTuning.reset();
 ```
 
