@@ -625,18 +625,29 @@
     }
 
     .tests-status {
-      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
     }
 
     .tests-status--pass {
       color: #16a34a;
+      background: rgba(22, 163, 74, 0.12);
+      border-color: rgba(22, 163, 74, 0.32);
     }
 
     .tests-status--fail {
       color: #dc2626;
+      background: rgba(220, 38, 38, 0.12);
+      border-color: rgba(220, 38, 38, 0.32);
     }
 
     .tests-details {
@@ -698,6 +709,97 @@
       color: #dc2626;
     }
 
+    .tests-cards {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tests-card {
+      background: var(--color-surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card);
+      padding: 16px;
+      border: 1px solid var(--color-border-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tests-card__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .tests-card__title {
+      margin: 0;
+      font-size: 1.05rem;
+      word-break: break-word;
+    }
+
+    .tests-card__overall {
+      font-size: 0.78rem;
+    }
+
+    .tests-card__list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }
+
+    .tests-card__row {
+      display: grid;
+      gap: 6px;
+    }
+
+    .tests-card__stage {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-weight: 600;
+      color: var(--color-subtle-text);
+    }
+
+    .tests-card__details {
+      background: var(--color-surface-subtle);
+      border-radius: 12px;
+      border: 1px solid var(--color-border-soft);
+      padding: 10px 12px;
+    }
+
+    .tests-card__details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--color-subtle-text);
+    }
+
+    .tests-card__details-body {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: var(--color-muted-text);
+      display: grid;
+      gap: 6px;
+    }
+
+    .tests-card__empty {
+      text-align: center;
+      color: var(--color-muted-text);
+    }
+
+    .tests-table td.tests-sample {
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .tests-sandbox {
       position: absolute;
       left: -9999px;
@@ -737,6 +839,46 @@
       .stl-button {
         width: 100%;
         text-align: center;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .tests-panel {
+        gap: 12px;
+        padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      }
+
+      .tests-panel h2 {
+        margin: 0 0 6px;
+        font-size: 1.4rem;
+      }
+
+      .tests-controls {
+        position: sticky;
+        bottom: 0;
+        z-index: 10;
+        padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
+        background: var(--color-surface);
+      }
+
+      .tests-run-button {
+        width: 100%;
+        padding: 14px 20px;
+        min-height: 44px;
+        font-size: 1rem;
+      }
+
+      .tests-table-wrapper {
+        display: none;
+      }
+
+      .tests-cards {
+        display: flex;
+      }
+
+      .tests-status {
+        font-size: 0.85rem;
+        padding: 6px 12px;
       }
     }
   </style>
@@ -885,6 +1027,7 @@
             <tbody id="tests-results-body"></tbody>
           </table>
         </div>
+        <div class="tests-cards" id="tests-results-cards" aria-live="polite"></div>
         <div id="tests-sandbox" class="tests-sandbox" aria-hidden="true"></div>
       </div>
     </section>
