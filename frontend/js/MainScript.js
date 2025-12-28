@@ -9,6 +9,7 @@ import {
   OVERLAY_INTERACTION_MODES,
 } from './ObjectOutlining.js';
 import { ensureThreeJs, initStlDesigner } from './STLLogic.js';
+import { initTestRunner } from './TestRunner.js';
 
 const DOM_IDS = {
   input: 'file-upload',
@@ -113,6 +114,7 @@ function boot() {
   setupTabs();
   setupHintTuningControls();
   setupThemeToggle();
+  initTestRunner();
 
   ensureThreeJs().finally(() => {
     initStlDesigner(stlDesignerOptions);
