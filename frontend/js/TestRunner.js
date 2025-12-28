@@ -5,6 +5,7 @@ import { initStlDesigner } from './STLLogic.js';
 const DOM_IDS = Object.freeze({
   runAllButton: 'tests-run-all',
   resultsBody: 'tests-results-body',
+  resultsCards: 'tests-results-cards',
   sandbox: 'tests-sandbox',
 });
 
@@ -22,6 +23,7 @@ const REQUIRED_DOM_IDS = [
   'stl-reset',
   DOM_IDS.runAllButton,
   DOM_IDS.resultsBody,
+  DOM_IDS.resultsCards,
 ];
 
 const TEST_SAMPLES = [
@@ -52,11 +54,12 @@ let stlSmokeState = null;
 export function initTestRunner() {
   const runAllButton = document.getElementById(DOM_IDS.runAllButton);
   const resultsBody = document.getElementById(DOM_IDS.resultsBody);
+  const resultsCards = document.getElementById(DOM_IDS.resultsCards);
   const sandbox = document.getElementById(DOM_IDS.sandbox);
 
-  if (!runAllButton || !resultsBody || !sandbox) return;
+  if (!runAllButton || !resultsBody || !resultsCards || !sandbox) return;
 
-  renderEmptyState(resultsBody);
+  renderEmptyState(resultsBody, resultsCards);
 
   let running = false;
 
@@ -103,10 +106,10 @@ export function initTestRunner() {
         });
       }
 
-      renderResults(resultsBody, results);
+      renderResults(resultsBody, resultsCards, results);
     } catch (error) {
       console.error('GridFinium: test run failed.', error);
-      renderError(resultsBody, error);
+      renderError(resultsBody, resultsCards, error);
     } finally {
       running = false;
       runAllButton.disabled = false;
@@ -119,7 +122,7 @@ export function initTestRunner() {
   });
 }
 
-function renderEmptyState(resultsBody) {
+function renderEmptyState(resultsBody, resultsCards) {
   resultsBody.replaceChildren();
   const row = document.createElement('tr');
   const cell = document.createElement('td');
@@ -128,9 +131,15 @@ function renderEmptyState(resultsBody) {
   cell.className = 'tests-table__empty';
   row.appendChild(cell);
   resultsBody.appendChild(row);
+
+  resultsCards.replaceChildren();
+  const card = document.createElement('div');
+  card.className = 'tests-card tests-card__empty';
+  card.textContent = 'No test results yet. Tap “Run All” to start the smoke checks.';
+  resultsCards.appendChild(card);
 }
 
-function renderError(resultsBody, error) {
+function renderError(resultsBody, resultsCards, error) {
   resultsBody.replaceChildren();
   const row = document.createElement('tr');
   const cell = document.createElement('td');
@@ -139,9 +148,15 @@ function renderError(resultsBody, error) {
   cell.textContent = `Test run failed: ${formatError(error)}`;
   row.appendChild(cell);
   resultsBody.appendChild(row);
+
+  resultsCards.replaceChildren();
+  const card = document.createElement('div');
+  card.className = 'tests-card tests-card__empty tests-table__empty--error';
+  card.textContent = `Test run failed: ${formatError(error)}`;
+  resultsCards.appendChild(card);
 }
 
-function renderResults(resultsBody, results) {
+function renderResults(resultsBody, resultsCards, results) {
   resultsBody.replaceChildren();
 
   results.forEach((result) => {
@@ -161,11 +176,18 @@ function renderResults(resultsBody, results) {
     detailsRow.appendChild(detailsCell);
     resultsBody.appendChild(detailsRow);
   });
+
+  resultsCards.replaceChildren();
+  results.forEach((result) => {
+    resultsCards.appendChild(buildCard(result));
+  });
 }
 
 function buildTextCell(text) {
   const cell = document.createElement('td');
   cell.textContent = text;
+  cell.title = text;
+  cell.className = 'tests-sample';
   return cell;
 }
 
@@ -229,6 +251,77 @@ function buildDetailsPanel(result) {
 
   wrapper.appendChild(list);
   return wrapper;
+}
+
+function buildCard(result) {
+  const card = document.createElement('article');
+  card.className = 'tests-card';
+
+  const header = document.createElement('div');
+  header.className = 'tests-card__header';
+
+  const title = document.createElement('h3');
+  title.className = 'tests-card__title';
+  title.textContent = result.sampleName;
+  title.title = result.sampleName;
+  header.appendChild(title);
+
+  const overall = document.createElement('span');
+  overall.className = `tests-status tests-status--${result.overallPass ? 'pass' : 'fail'} tests-card__overall`;
+  overall.textContent = result.overallPass ? 'Pass' : 'Fail';
+  header.appendChild(overall);
+
+  card.appendChild(header);
+
+  const list = document.createElement('ul');
+  list.className = 'tests-card__list';
+
+  Object.entries(result.stages).forEach(([stageName, stageResult]) => {
+    const item = document.createElement('li');
+    item.className = 'tests-card__row';
+
+    const stageRow = document.createElement('div');
+    stageRow.className = 'tests-card__stage';
+
+    const label = document.createElement('span');
+    label.textContent = stageName;
+    stageRow.appendChild(label);
+
+    const status = document.createElement('span');
+    status.className = `tests-status tests-status--${stageResult?.pass ? 'pass' : 'fail'}`;
+    status.textContent = stageResult?.pass ? 'Pass' : 'Fail';
+    stageRow.appendChild(status);
+
+    item.appendChild(stageRow);
+
+    if (stageResult?.message || stageResult?.metrics) {
+      const details = document.createElement('details');
+      details.className = 'tests-card__details';
+
+      const summary = document.createElement('summary');
+      summary.textContent = 'Details';
+      details.appendChild(summary);
+
+      const body = document.createElement('div');
+      body.className = 'tests-card__details-body';
+      body.textContent = stageResult?.message || 'No message provided.';
+      details.appendChild(body);
+
+      if (stageResult?.metrics && Object.keys(stageResult.metrics).length > 0) {
+        const metrics = document.createElement('pre');
+        metrics.className = 'tests-details__metrics';
+        metrics.textContent = JSON.stringify(stageResult.metrics, null, 2);
+        body.appendChild(metrics);
+      }
+
+      item.appendChild(details);
+    }
+
+    list.appendChild(item);
+  });
+
+  card.appendChild(list);
+  return card;
 }
 
 async function runDomWiringTest() {
