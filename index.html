@@ -560,6 +560,153 @@
       font-size: 0.9rem;
     }
 
+    .tests-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tests-controls {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .tests-run-button {
+      border: none;
+      background: var(--color-accent);
+      color: var(--color-accent-contrast);
+      padding: 10px 20px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      box-shadow: var(--shadow-button-primary);
+    }
+
+    .tests-run-button:hover,
+    .tests-run-button:focus-visible {
+      background: var(--color-accent-hover);
+      transform: translateY(-1px);
+      outline: none;
+      box-shadow: var(--shadow-button-primary-hover);
+    }
+
+    .tests-run-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .tests-table-wrapper {
+      border-radius: 16px;
+      background: var(--color-surface);
+      box-shadow: var(--shadow-card);
+      overflow-x: auto;
+    }
+
+    .tests-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+    }
+
+    .tests-table th,
+    .tests-table td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--color-border-soft);
+      font-size: 0.9rem;
+    }
+
+    .tests-table th {
+      background: var(--color-surface-subtle);
+      color: var(--color-subtle-text);
+      font-weight: 600;
+    }
+
+    .tests-status {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-size: 0.75rem;
+    }
+
+    .tests-status--pass {
+      color: #16a34a;
+    }
+
+    .tests-status--fail {
+      color: #dc2626;
+    }
+
+    .tests-details {
+      padding: 12px 16px;
+      background: var(--color-surface-subtle);
+      border-radius: 12px;
+      border: 1px solid var(--color-border-soft);
+    }
+
+    .tests-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--color-subtle-text);
+    }
+
+    .tests-details__meta {
+      display: grid;
+      gap: 4px;
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: var(--color-muted-text);
+    }
+
+    .tests-details__list {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .tests-details__title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .tests-details__message {
+      color: var(--color-muted-text);
+      font-size: 0.85rem;
+    }
+
+    .tests-details__metrics {
+      margin: 8px 0 0;
+      padding: 8px 12px;
+      background: var(--color-surface);
+      border-radius: 8px;
+      font-size: 0.75rem;
+      color: var(--color-subtle-text);
+      border: 1px solid var(--color-border-soft);
+    }
+
+    .tests-table__empty {
+      color: var(--color-muted-text);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .tests-table__empty--error {
+      color: #dc2626;
+    }
+
+    .tests-sandbox {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+
     @media (max-width: 640px) {
       body {
         padding: 16px;
@@ -607,6 +754,7 @@
     <nav class="tab-bar" aria-label="Primary">
       <button type="button" class="tab-button is-active" data-tab-target="image-tools">Image Tools</button>
       <button type="button" class="tab-button" data-tab-target="stl-tools">STL Designer</button>
+      <button type="button" class="tab-button" data-tab-target="tests">Tests</button>
     </nav>
 
     <section id="image-tools" class="tab-panel is-active" aria-label="Image Tools">
@@ -711,6 +859,34 @@
         <div class="stl-viewer" id="stl-viewer" aria-label="3D preview" role="img"></div>
       </div>
       <p class="stl-tip">Tip: drag to rotate the model and use your scroll wheel or trackpad to zoom.</p>
+    </section>
+
+    <section id="tests" class="tab-panel" aria-label="Tests">
+      <div class="tests-panel">
+        <div>
+          <h2>In-app Tests</h2>
+          <p>Run smoke and schema checks against the current UI, detection pipeline, and STL export.</p>
+        </div>
+        <div class="tests-controls">
+          <button type="button" class="tests-run-button" id="tests-run-all">Run All</button>
+        </div>
+        <div class="tests-table-wrapper">
+          <table class="tests-table">
+            <thead>
+              <tr>
+                <th>Sample</th>
+                <th>Load</th>
+                <th>Paper Detect</th>
+                <th>Overlay Init</th>
+                <th>STL Export Smoke</th>
+                <th>Overall</th>
+              </tr>
+            </thead>
+            <tbody id="tests-results-body"></tbody>
+          </table>
+        </div>
+        <div id="tests-sandbox" class="tests-sandbox" aria-hidden="true"></div>
+      </div>
     </section>
   </main>
 </body>
