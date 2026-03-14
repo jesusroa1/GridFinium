@@ -1,5 +1,6 @@
 import { detectPaperContour, extractContourPoints } from './PaperOutlining.js';
 import { detectObjectContour, extractPoints } from './ObjectDetection.js';
+import { initTestRunner } from './TestRunner.js';
 
 // Letter paper dimensions in millimetres (8.5" × 11")
 const PAPER_WIDTH_MM = 215.9;
@@ -24,6 +25,7 @@ async function boot() {
   setupThemeToggle();
   setupSampleButtons();
   setupFileUpload();
+  initTestRunner();
 
   setStatus('Loading OpenCV…', '');
   cvReady = waitForOpenCv();

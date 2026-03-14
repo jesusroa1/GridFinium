@@ -23,7 +23,6 @@ export function detectObjectContour(src, paperContour) {
   if (!paperContour) return null;
 
   const gray = new cv.Mat();
-  const masked = new cv.Mat();
   const blurred = new cv.Mat();
   const edges = new cv.Mat();
   const contours = new cv.MatVector();
@@ -43,15 +42,18 @@ export function detectObjectContour(src, paperContour) {
     cv.erode(mask, mask, erodeKernel);
     erodeKernel.delete();
 
-    // 3. Grayscale + apply mask (zeros outside paper)
+    // 3. Grayscale and blur the full image (no masking yet)
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.bitwise_and(gray, mask, masked);
+    cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
 
-    // 4. Blur to reduce paper texture noise
-    cv.GaussianBlur(masked, blurred, new cv.Size(7, 7), 0);
-
-    // 5. Edge detection
+    // 4. Edge detection on the full image — masking BEFORE Canny would create
+    //    a hard pixel transition at the mask boundary, which Canny detects as
+    //    the outermost contour. With RETR_EXTERNAL that swallows all inner
+    //    object contours, so nothing is ever returned.
     cv.Canny(blurred, edges, 20, 60);
+
+    // 5. Zero out edges outside the eroded paper region
+    cv.bitwise_and(edges, mask, edges);
 
     // 6. Dilate to close small gaps in the object outline
     const dilateKernel = cv.Mat.ones(7, 7, cv.CV_8U);
@@ -98,7 +100,6 @@ export function detectObjectContour(src, paperContour) {
     return simplified;
   } finally {
     gray.delete();
-    masked.delete();
     blurred.delete();
     edges.delete();
     contours.delete();

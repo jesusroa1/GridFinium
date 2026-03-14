@@ -1,6 +1,5 @@
 import { detectPaperContour, extractContourPoints } from './PaperOutlining.js';
-import { attachPaperOverlay } from './ObjectOutlining.js';
-import { initStlDesigner } from './STLLogic.js';
+import { detectObjectContour, extractPoints } from './ObjectDetection.js';
 
 const DOM_IDS = Object.freeze({
   runAllButton: 'tests-run-all',
@@ -11,16 +10,9 @@ const DOM_IDS = Object.freeze({
 
 const REQUIRED_DOM_IDS = [
   'file-upload',
-  'preview',
-  'test-image-picker',
-  'hint-tuning-card',
-  'hint-tuning-toggle',
-  'stl-viewer',
-  'stl-width',
-  'stl-depth',
-  'stl-height',
-  'stl-download',
-  'stl-reset',
+  'output-canvas',
+  'status',
+  'results',
   DOM_IDS.runAllButton,
   DOM_IDS.resultsBody,
   DOM_IDS.resultsCards,
@@ -39,17 +31,10 @@ const TEST_SAMPLES = [
     name: 'Coaster top on paper',
     src: 'frontend/test-images/coaster-top.png.jpeg',
   },
-  {
-    name: 'Fallback coaster',
-    src: 'example_coaster.jpeg',
-  },
 ];
 
-const TAB_DATA_ATTRIBUTE = 'data-tab-target';
 const OPEN_CV_POLL_INTERVAL_MS = 50;
 const OPEN_CV_TIMEOUT_MS = 10000;
-
-let stlSmokeState = null;
 
 export function initTestRunner() {
   const runAllButton = document.getElementById(DOM_IDS.runAllButton);
@@ -71,7 +56,6 @@ export function initTestRunner() {
 
     try {
       const domWiringStage = await runDomWiringTest();
-      const stlStage = await runStlSmokeTest(sandbox);
 
       const results = [];
 
@@ -87,13 +71,10 @@ export function initTestRunner() {
         const detectionResult = await runPaperDetectionTest(loadResult.imageElement);
         stages['Paper Detect'] = detectionResult.stage;
 
-        stages['Overlay Init'] = await runOverlayInitTest(
-          detectionResult.points,
+        stages['Object Detect'] = await runObjectDetectionTest(
           loadResult.imageElement,
-          sandbox,
+          detectionResult.paperContour,
         );
-
-        stages['STL Export Smoke'] = stlStage;
 
         const overallPass = Object.values(stages).every((stage) => stage?.pass);
 
@@ -127,7 +108,7 @@ function renderEmptyState(resultsBody, resultsCards) {
   const row = document.createElement('tr');
   const cell = document.createElement('td');
   cell.colSpan = 6;
-  cell.textContent = 'No test results yet. Click “Run All” to start the smoke checks.';
+  cell.textContent = 'No test results yet. Click "Run All" to start the smoke checks.';
   cell.className = 'tests-table__empty';
   row.appendChild(cell);
   resultsBody.appendChild(row);
@@ -135,7 +116,7 @@ function renderEmptyState(resultsBody, resultsCards) {
   resultsCards.replaceChildren();
   const card = document.createElement('div');
   card.className = 'tests-card tests-card__empty';
-  card.textContent = 'No test results yet. Tap “Run All” to start the smoke checks.';
+  card.textContent = 'No test results yet. Tap "Run All" to start the smoke checks.';
   resultsCards.appendChild(card);
 }
 
@@ -164,14 +145,13 @@ function renderResults(resultsBody, resultsCards, results) {
     row.appendChild(buildTextCell(result.sampleName));
     row.appendChild(buildStatusCell(result.stages['Load']));
     row.appendChild(buildStatusCell(result.stages['Paper Detect']));
-    row.appendChild(buildStatusCell(result.stages['Overlay Init']));
-    row.appendChild(buildStatusCell(result.stages['STL Export Smoke']));
+    row.appendChild(buildStatusCell(result.stages['Object Detect']));
     row.appendChild(buildOverallCell(result.overallPass));
     resultsBody.appendChild(row);
 
     const detailsRow = document.createElement('tr');
     const detailsCell = document.createElement('td');
-    detailsCell.colSpan = 6;
+    detailsCell.colSpan = 5;
     detailsCell.appendChild(buildDetailsPanel(result));
     detailsRow.appendChild(detailsCell);
     resultsBody.appendChild(detailsRow);
@@ -326,40 +306,18 @@ function buildCard(result) {
 
 async function runDomWiringTest() {
   const missing = REQUIRED_DOM_IDS.filter((id) => !document.getElementById(id));
-  let tabError = null;
-  const tabButtons = Array.from(document.querySelectorAll(`button[${TAB_DATA_ATTRIBUTE}]`));
-
-  try {
-    tabButtons.forEach((button) => {
-      button.click();
-    });
-  } catch (error) {
-    tabError = error;
-  }
-
-  const pass = missing.length === 0 && !tabError;
-  return buildStageResult(pass, pass
-    ? 'Required DOM elements present; tab switching did not throw.'
-    : formatDomWiringMessage(missing, tabError), {
-    missingIds: missing,
-    tabButtonCount: tabButtons.length,
-  });
+  const pass = missing.length === 0;
+  return buildStageResult(
+    pass,
+    pass ? 'Required DOM elements present.' : `Missing IDs: ${missing.join(', ')}.`,
+    { missingIds: missing },
+  );
 }
 
 async function runImageLoadTest(sample) {
   const imageElement = new Image();
   try {
     await loadImage(imageElement, sample.src);
-
-    let bitmap = null;
-    if (typeof createImageBitmap === 'function') {
-      bitmap = await createImageBitmap(imageElement);
-    }
-
-    if (bitmap && typeof bitmap.close === 'function') {
-      bitmap.close();
-    }
-
     return {
       imageElement,
       stage: buildStageResult(true, 'Image loaded successfully.', {
@@ -371,9 +329,7 @@ async function runImageLoadTest(sample) {
   } catch (error) {
     return {
       imageElement: null,
-      stage: buildStageResult(false, formatError(error), {
-        source: sample.src,
-      }),
+      stage: buildStageResult(false, formatError(error), { source: sample.src }),
     };
   }
 }
@@ -381,164 +337,81 @@ async function runImageLoadTest(sample) {
 async function runPaperDetectionTest(imageElement) {
   if (!imageElement) {
     return {
-      stage: buildStageResult(false, 'Skipped paper detection because the image failed to load.'),
-      points: null,
+      stage: buildStageResult(false, 'Skipped: image failed to load.'),
+      paperContour: null,
     };
   }
 
   try {
     await waitForOpenCv();
     const src = cv.imread(imageElement);
-    let contour = null;
+    let paperContour = null;
     let points = null;
 
     try {
-      contour = detectPaperContour(src, () => {});
-      if (contour) {
-        points = extractContourPoints(contour);
+      paperContour = detectPaperContour(src, () => {});
+      if (paperContour) {
+        points = extractContourPoints(paperContour);
       }
     } finally {
-      if (contour) contour.delete();
       src.delete();
     }
 
-    if (points && points.length) {
+    if (points && points.length >= 4) {
       return {
-        stage: buildStageResult(true, 'Paper contour detected.', {
-          pointCount: points.length,
-        }),
-        points,
+        stage: buildStageResult(true, 'Paper contour detected.', { pointCount: points.length }),
+        paperContour,
       };
     }
 
+    if (paperContour) paperContour.delete();
     return {
-      stage: buildStageResult(true, 'Paper contour not found, but handled gracefully.', {}),
-      points: null,
+      stage: buildStageResult(false, 'Paper contour not found in sample image.'),
+      paperContour: null,
     };
   } catch (error) {
     return {
       stage: buildStageResult(false, formatError(error)),
-      points: null,
+      paperContour: null,
     };
   }
 }
 
-async function runOverlayInitTest(points, imageElement, sandbox) {
+async function runObjectDetectionTest(imageElement, paperContour) {
   if (!imageElement) {
-    return buildStageResult(false, 'Skipped overlay init because the image failed to load.');
+    return buildStageResult(false, 'Skipped: image failed to load.');
   }
-
-  const overlay = document.createElement('div');
-  overlay.className = 'tests-overlay';
-  sandbox.appendChild(overlay);
+  if (!paperContour) {
+    return buildStageResult(false, 'Skipped: paper not detected.');
+  }
 
   try {
-    const corners = Array.isArray(points) && points.length >= 4 ? points : null;
-    const renderInfo = {
-      originalWidth: imageElement.naturalWidth,
-      originalHeight: imageElement.naturalHeight,
-      displayWidth: imageElement.naturalWidth,
-      displayHeight: imageElement.naturalHeight,
-    };
-    attachPaperOverlay(overlay, corners, renderInfo);
-    return buildStageResult(true, 'Overlay initialized without throwing.', {
-      cornersProvided: Boolean(corners),
-    });
+    await waitForOpenCv();
+    const src = cv.imread(imageElement);
+    let objectContour = null;
+    let points = null;
+
+    try {
+      objectContour = detectObjectContour(src, paperContour);
+      if (objectContour) {
+        points = extractPoints(objectContour);
+        objectContour.delete();
+      }
+    } finally {
+      paperContour.delete();
+      src.delete();
+    }
+
+    if (points && points.length >= 3) {
+      return buildStageResult(true, 'Object contour detected.', { pointCount: points.length });
+    }
+
+    return buildStageResult(
+      false,
+      'No object found inside the paper region. Check that the sample image has a clearly visible object on the paper.',
+    );
   } catch (error) {
     return buildStageResult(false, formatError(error));
-  } finally {
-    overlay.remove();
-  }
-}
-
-async function runStlSmokeTest(sandbox) {
-  if (!stlSmokeState) {
-    const container = document.createElement('div');
-    container.className = 'tests-stl-sandbox';
-
-    const viewer = document.createElement('div');
-    viewer.id = 'tests-stl-viewer';
-
-    const widthInput = document.createElement('input');
-    widthInput.type = 'number';
-    widthInput.id = 'tests-stl-width';
-    widthInput.value = '4';
-
-    const depthInput = document.createElement('input');
-    depthInput.type = 'number';
-    depthInput.id = 'tests-stl-depth';
-    depthInput.value = '6';
-
-    const heightInput = document.createElement('input');
-    heightInput.type = 'number';
-    heightInput.id = 'tests-stl-height';
-    heightInput.value = '3';
-
-    const summary = document.createElement('p');
-    summary.id = 'tests-stl-summary';
-
-    const downloadButton = document.createElement('button');
-    downloadButton.type = 'button';
-    downloadButton.id = 'tests-stl-download';
-    downloadButton.textContent = 'Download STL';
-
-    const resetButton = document.createElement('button');
-    resetButton.type = 'button';
-    resetButton.id = 'tests-stl-reset';
-    resetButton.textContent = 'Reset';
-
-    container.appendChild(viewer);
-    container.appendChild(widthInput);
-    container.appendChild(depthInput);
-    container.appendChild(heightInput);
-    container.appendChild(summary);
-    container.appendChild(downloadButton);
-    container.appendChild(resetButton);
-    sandbox.appendChild(container);
-
-    const controller = initStlDesigner({
-      viewerId: viewer.id,
-      widthInputId: widthInput.id,
-      depthInputId: depthInput.id,
-      heightInputId: heightInput.id,
-      summaryId: summary.id,
-      downloadButtonId: downloadButton.id,
-      resetButtonId: resetButton.id,
-    });
-
-    stlSmokeState = {
-      container,
-      downloadButton,
-      controller,
-    };
-  }
-
-  const originalCreateObjectUrl = URL.createObjectURL.bind(URL);
-  const originalRevokeObjectUrl = URL.revokeObjectURL.bind(URL);
-
-  let blobSize = 0;
-
-  URL.createObjectURL = (blob) => {
-    blobSize = blob?.size ?? 0;
-    return 'blob:test-stl';
-  };
-  URL.revokeObjectURL = () => {};
-
-  try {
-    stlSmokeState.downloadButton.click();
-
-    const pass = Boolean(stlSmokeState.controller) && blobSize > 0;
-    return buildStageResult(pass,
-      pass
-        ? 'STL designer initialized and export produced output.'
-        : 'STL export did not produce output.', {
-        blobSize,
-      });
-  } catch (error) {
-    return buildStageResult(false, formatError(error));
-  } finally {
-    URL.createObjectURL = originalCreateObjectUrl;
-    URL.revokeObjectURL = originalRevokeObjectUrl;
   }
 }
 
@@ -591,14 +464,6 @@ function waitForOpenCv() {
       reject(new Error('OpenCV initialization timed out.'));
     }, OPEN_CV_TIMEOUT_MS);
   });
-}
-
-function formatDomWiringMessage(missing, tabError) {
-  const missingText = missing.length
-    ? `Missing IDs: ${missing.join(', ')}.`
-    : 'All required IDs present.';
-  const tabText = tabError ? ` Tab switching error: ${formatError(tabError)}` : ' Tab switching OK.';
-  return `${missingText}${tabText}`.trim();
 }
 
 function formatError(error) {

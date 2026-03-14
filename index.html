@@ -400,6 +400,175 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
+    /* ── Tests section ──────────────────────────────────────────────────── */
+    .tests-section {
+      border-top: 1px solid var(--color-border-soft);
+      padding-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tests-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .tests-heading {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-subtle-text);
+    }
+
+    .tests-run-btn {
+      border: 1px solid var(--color-border-soft);
+      background: var(--color-surface-subtle);
+      color: var(--color-subtle-text);
+      padding: 8px 18px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+
+    .tests-run-btn:hover:not(:disabled) {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+    }
+
+    .tests-run-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    /* Desktop table */
+    .tests-table-wrap {
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--color-border-soft);
+    }
+
+    .tests-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .tests-table th {
+      background: var(--color-surface-subtle);
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--color-muted-text);
+      border-bottom: 1px solid var(--color-border-soft);
+      white-space: nowrap;
+    }
+
+    .tests-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--color-border-soft);
+      vertical-align: top;
+    }
+
+    .tests-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .tests-sample {
+      color: var(--color-body-text);
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tests-status--pass { color: #15803d; font-weight: 600; }
+    .tests-status--fail { color: #dc2626; font-weight: 600; }
+    [data-theme="dark"] .tests-status--pass { color: #4ade80; }
+    [data-theme="dark"] .tests-status--fail { color: #f87171; }
+
+    .tests-table__empty {
+      color: var(--color-muted-text);
+      font-style: italic;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .tests-table__empty--error { color: #dc2626; }
+    [data-theme="dark"] .tests-table__empty--error { color: #f87171; }
+
+    .tests-details {
+      font-size: 0.8rem;
+      color: var(--color-subtle-text);
+    }
+
+    .tests-details summary { cursor: pointer; color: var(--color-accent); }
+    .tests-details__meta { margin: 6px 0; }
+    .tests-details__list { margin: 6px 0; padding-left: 16px; }
+    .tests-details__item--pass { color: #15803d; }
+    .tests-details__item--fail { color: #dc2626; }
+    [data-theme="dark"] .tests-details__item--pass { color: #4ade80; }
+    [data-theme="dark"] .tests-details__item--fail { color: #f87171; }
+    .tests-details__title { font-weight: 600; margin-bottom: 2px; }
+    .tests-details__message { font-family: monospace; font-size: 0.78rem; word-break: break-word; }
+    .tests-details__metrics {
+      margin: 4px 0 0;
+      padding: 6px 8px;
+      background: var(--color-surface-subtle);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      overflow-x: auto;
+    }
+
+    /* Mobile cards */
+    .tests-cards { display: none; flex-direction: column; gap: 12px; }
+
+    .tests-card {
+      border: 1px solid var(--color-border-soft);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: var(--color-surface-subtle);
+      font-size: 0.85rem;
+    }
+
+    .tests-card__empty {
+      color: var(--color-muted-text);
+      font-style: italic;
+      text-align: center;
+    }
+
+    .tests-card__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .tests-card__title {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 60%;
+    }
+
+    .tests-card__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .tests-card__row { display: flex; flex-direction: column; gap: 2px; }
+    .tests-card__stage { display: flex; justify-content: space-between; align-items: center; }
+
+    .tests-card__details summary { cursor: pointer; font-size: 0.78rem; color: var(--color-accent); }
+    .tests-card__details-body { font-family: monospace; font-size: 0.75rem; word-break: break-word; margin-top: 4px; }
+
+    /* Sandbox (hidden, used for test DOM helpers) */
+    #tests-sandbox { display: none; }
+
     /* ── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 640px) {
       body { padding: 16px; }
@@ -407,6 +576,8 @@
       .app-header { flex-direction: column; align-items: stretch; gap: 10px; }
       .app-title { text-align: center; }
       .theme-toggle { align-self: center; }
+      .tests-table-wrap { display: none; }
+      .tests-cards { display: flex; }
     }
   </style>
 </head>
@@ -498,6 +669,36 @@
 
     <!-- Detection results -->
     <div id="results" aria-live="polite"></div>
+
+    <!-- Tests section -->
+    <section class="tests-section" aria-labelledby="tests-heading">
+      <div class="tests-header">
+        <h2 class="tests-heading" id="tests-heading">Detection tests</h2>
+        <button type="button" class="tests-run-btn" id="tests-run-all">Run All</button>
+      </div>
+
+      <!-- Desktop table -->
+      <div class="tests-table-wrap">
+        <table class="tests-table" aria-label="Test results">
+          <thead>
+            <tr>
+              <th>Sample</th>
+              <th>Load</th>
+              <th>Paper Detect</th>
+              <th>Object Detect</th>
+              <th>Overall</th>
+            </tr>
+          </thead>
+          <tbody id="tests-results-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Mobile cards -->
+      <div class="tests-cards" id="tests-results-cards" aria-live="polite"></div>
+
+      <!-- Hidden sandbox for test helpers -->
+      <div id="tests-sandbox" aria-hidden="true"></div>
+    </section>
 
   </main>
 </body>
