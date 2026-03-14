@@ -5,15 +5,17 @@
   <script type="module" src="frontend/js/MainScript.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GridFinium</title>
+  <title>Gridfinium</title>
   <link rel="icon" type="image/svg+xml" href="frontend/favicon.svg">
   <style>
+    /* ── Design tokens ──────────────────────────────────────────────────── */
     :root {
       color-scheme: light;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.5;
       background-color: var(--color-body-bg);
       color: var(--color-body-text);
+
       --color-body-bg: #f5f6fa;
       --color-body-text: #1f2933;
       --color-surface: #ffffff;
@@ -22,24 +24,10 @@
       --color-border-strong: rgba(148, 163, 184, 0.4);
       --color-subtle-text: #475569;
       --color-muted-text: #64748b;
-      --color-tab-bg: #eef2ff;
-      --color-tab-text: #475569;
-      --color-tab-hover-bg: rgba(99, 102, 241, 0.16);
-      --color-tab-hover-text: #312e81;
       --color-accent: #4f46e5;
       --color-accent-hover: #4338ca;
       --color-accent-contrast: #ffffff;
-      --color-secondary-bg: #e0e7ff;
-      --color-secondary-text: #312e81;
-      --color-card-header-start: #eef2ff;
-      --color-card-header-end: #f8fafc;
-      --color-viewer-bg-start: #f8fafc;
-      --color-viewer-bg-end: #e2e8f0;
       --color-focus-outline: rgba(99, 102, 241, 0.2);
-      --shadow-elevated: 0 14px 30px rgba(15, 23, 42, 0.12);
-      --shadow-card: 0 10px 24px rgba(15, 23, 42, 0.12);
-      --shadow-button-primary: 0 8px 16px rgba(79, 70, 229, 0.35);
-      --shadow-button-primary-hover: 0 12px 20px rgba(79, 70, 229, 0.28);
       --color-sample-border: #cbd5f5;
       --color-sample-bg-start: #f8faff;
       --color-sample-bg-end: #eef2ff;
@@ -48,13 +36,10 @@
       --color-sample-button-text: #1f2933;
       --color-sample-button-hover-bg: rgba(99, 102, 241, 0.12);
       --color-sample-button-hover-text: #312e81;
-      --color-processing-surface: var(--color-surface);
-      --color-processing-border: rgba(148, 163, 184, 0.35);
-      --color-processing-header-start: #eef2ff;
-      --color-processing-header-end: #f8fafc;
-      --color-processing-toggle-disabled: #9ca3af;
-      --color-processing-canvas-border: rgba(148, 163, 184, 0.35);
-      --color-processing-canvas-bg: #f8fafc;
+      --shadow-elevated: 0 14px 30px rgba(15, 23, 42, 0.12);
+      --shadow-card: 0 10px 24px rgba(15, 23, 42, 0.12);
+      --shadow-button-primary: 0 8px 16px rgba(79, 70, 229, 0.35);
+      --shadow-button-primary-hover: 0 12px 20px rgba(79, 70, 229, 0.28);
     }
 
     [data-theme="dark"] {
@@ -67,24 +52,10 @@
       --color-border-strong: rgba(96, 165, 250, 0.35);
       --color-subtle-text: #cbd5f5;
       --color-muted-text: #94a3b8;
-      --color-tab-bg: rgba(99, 102, 241, 0.14);
-      --color-tab-text: #cbd5f5;
-      --color-tab-hover-bg: rgba(99, 102, 241, 0.3);
-      --color-tab-hover-text: #eef2ff;
       --color-accent: #6366f1;
       --color-accent-hover: #818cf8;
       --color-accent-contrast: #e0e7ff;
-      --color-secondary-bg: rgba(99, 102, 241, 0.22);
-      --color-secondary-text: #e0e7ff;
-      --color-card-header-start: #312e81;
-      --color-card-header-end: #1e1b4b;
-      --color-viewer-bg-start: #1f2937;
-      --color-viewer-bg-end: #111827;
       --color-focus-outline: rgba(99, 102, 241, 0.35);
-      --shadow-elevated: 0 16px 40px rgba(2, 6, 23, 0.6);
-      --shadow-card: 0 18px 36px rgba(2, 6, 23, 0.55);
-      --shadow-button-primary: 0 10px 24px rgba(99, 102, 241, 0.45);
-      --shadow-button-primary-hover: 0 12px 28px rgba(129, 140, 248, 0.5);
       --color-sample-border: rgba(129, 140, 248, 0.65);
       --color-sample-bg-start: rgba(79, 70, 229, 0.22);
       --color-sample-bg-end: rgba(30, 27, 75, 0.65);
@@ -93,18 +64,14 @@
       --color-sample-button-text: #e0e7ff;
       --color-sample-button-hover-bg: rgba(99, 102, 241, 0.32);
       --color-sample-button-hover-text: #f8fafc;
-      --color-processing-surface: rgba(17, 24, 39, 0.85);
-      --color-processing-border: rgba(99, 102, 241, 0.45);
-      --color-processing-header-start: rgba(79, 70, 229, 0.35);
-      --color-processing-header-end: rgba(30, 41, 59, 0.8);
-      --color-processing-toggle-disabled: rgba(148, 163, 184, 0.45);
-      --color-processing-canvas-border: rgba(99, 102, 241, 0.45);
-      --color-processing-canvas-bg: rgba(15, 23, 42, 0.75);
+      --shadow-elevated: 0 16px 40px rgba(2, 6, 23, 0.6);
+      --shadow-card: 0 18px 36px rgba(2, 6, 23, 0.55);
+      --shadow-button-primary: 0 10px 24px rgba(99, 102, 241, 0.45);
+      --shadow-button-primary-hover: 0 12px 28px rgba(129, 140, 248, 0.5);
     }
 
-    html {
-      background-color: var(--color-body-bg);
-    }
+    /* ── Base ───────────────────────────────────────────────────────────── */
+    html { background-color: var(--color-body-bg); }
 
     body {
       margin: 0;
@@ -122,15 +89,18 @@
       border-radius: 16px;
       box-shadow: var(--shadow-elevated);
       padding: 32px clamp(20px, 4vw, 48px);
-      transition: background-color 0.3s ease, box-shadow 0.3s ease, color 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
     }
 
+    /* ── Header ─────────────────────────────────────────────────────────── */
     .app-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 24px;
       flex-wrap: wrap;
     }
 
@@ -140,6 +110,14 @@
       letter-spacing: 0.04em;
     }
 
+    .app-subtitle {
+      margin: 0;
+      color: var(--color-muted-text);
+      font-size: 0.95rem;
+      max-width: 55ch;
+    }
+
+    /* ── Theme toggle ───────────────────────────────────────────────────── */
     .theme-toggle {
       --toggle-width: 120px;
       --toggle-height: 32px;
@@ -155,7 +133,7 @@
       height: var(--toggle-height);
       position: relative;
       cursor: pointer;
-      transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.2s ease;
+      transition: background-color 0.25s, border-color 0.25s, color 0.25s, box-shadow 0.2s;
       font-size: 0.75rem;
       font-weight: 600;
       letter-spacing: 0.05em;
@@ -175,7 +153,7 @@
     .theme-toggle__label {
       line-height: 1;
       opacity: 0.45;
-      transition: opacity 0.2s ease, color 0.2s ease;
+      transition: opacity 0.2s, color 0.2s;
       pointer-events: none;
     }
 
@@ -188,8 +166,7 @@
       border-radius: 999px;
       background: var(--color-surface);
       box-shadow: 0 6px 12px rgba(15, 23, 42, 0.18);
-      transition: transform 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
-      transform: translateX(0);
+      transition: transform 0.25s, background-color 0.25s, box-shadow 0.25s;
       pointer-events: none;
     }
 
@@ -210,130 +187,35 @@
       color: var(--color-body-text);
     }
 
-    .tab-bar {
-      display: flex;
-      gap: 8px;
-      background: var(--color-tab-bg);
-      padding: 6px;
-      border-radius: 999px;
-      margin-bottom: 24px;
-      justify-content: center;
-      transition: background-color 0.3s ease;
-    }
-
-    .tab-button {
-      border: none;
-      background: transparent;
-      color: var(--color-tab-text);
-      font-weight: 600;
-      padding: 10px 22px;
-      border-radius: 999px;
-      cursor: pointer;
-      transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
-    }
-
-    .tab-button:hover {
-      background: var(--color-tab-hover-bg);
-      color: var(--color-tab-hover-text);
-      transform: translateY(-1px);
-    }
-
-    .tab-button.is-active {
-      background: var(--color-accent);
-      color: var(--color-accent-contrast);
-      box-shadow: var(--shadow-button-primary);
-    }
-
-    .tab-panel {
-      display: none;
-    }
-
-    .tab-panel.is-active {
-      display: block;
-      animation: fade-in 180ms ease;
-    }
-
-    .hint-tuning-card {
-      margin-top: 36px;
-      border: 1px solid var(--color-border-soft);
-      border-radius: 12px;
-      background: var(--color-surface);
-      box-shadow: var(--shadow-card);
-      overflow: hidden;
-      transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-    }
-
-    .hint-tuning-card__header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 18px 20px;
-      background: linear-gradient(135deg, var(--color-card-header-start), var(--color-card-header-end));
-      gap: 12px;
-      transition: background 0.3s ease;
-    }
-
-    .hint-tuning-card__title,
-    .processing-steps__title {
-      margin: 0;
-      font-size: clamp(1.35rem, 2.5vw, 1.6rem);
-      font-weight: 700;
-    }
-
-    .hint-tuning-card__toggle {
-      border: none;
-      background: var(--color-accent);
-      color: var(--color-accent-contrast);
-      padding: 8px 18px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-      box-shadow: var(--shadow-button-primary);
-    }
-
-    .hint-tuning-card__toggle:hover {
-      background: var(--color-accent-hover);
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-button-primary-hover);
-    }
-
-    .test-image-picker {
-      margin-top: 28px;
+    /* ── Sample picker ──────────────────────────────────────────────────── */
+    .sample-picker {
       padding: 20px clamp(16px, 4vw, 24px);
       border-radius: 16px;
       border: 1px dashed var(--color-sample-border);
       background: linear-gradient(135deg, var(--color-sample-bg-start), var(--color-sample-bg-end));
       box-shadow: var(--shadow-card);
-      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+      transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
     }
 
-    .test-image-picker__intro {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .sample-picker__heading {
+      margin: 0 0 4px;
+      font-size: 1.1rem;
+      font-weight: 700;
     }
 
-    .test-image-picker__heading {
-      margin: 0;
-      font-size: clamp(1.4rem, 3vw, 1.6rem);
-    }
-
-    .test-image-picker__description {
-      margin: 0;
+    .sample-picker__description {
+      margin: 0 0 14px;
       color: var(--color-subtle-text);
-      font-size: 0.95rem;
-      max-width: 62ch;
+      font-size: 0.9rem;
     }
 
-    .test-image-picker__buttons {
+    .sample-buttons {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 18px;
+      gap: 10px;
     }
 
-    .test-image-button {
+    .sample-btn {
       border: 1px solid var(--color-sample-button-border);
       background: var(--color-sample-button-bg);
       color: var(--color-sample-button-text);
@@ -341,696 +223,282 @@
       border-radius: 12px;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s;
       box-shadow: var(--shadow-card);
     }
 
-    .test-image-button:hover {
+    .sample-btn:hover {
       background: var(--color-sample-button-hover-bg);
       color: var(--color-sample-button-hover-text);
       transform: translateY(-1px);
     }
 
-    .test-image-button:focus-visible {
+    .sample-btn:focus-visible {
       outline: 2px solid var(--color-accent);
       outline-offset: 2px;
     }
 
-    .test-image-button--active {
+    .sample-btn--active {
       background: var(--color-accent);
       color: var(--color-accent-contrast);
       border-color: var(--color-accent);
       box-shadow: var(--shadow-button-primary);
     }
 
-    .hint-tuning-card__toggle:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .hint-tuning-card__content {
-      padding: 0 20px;
-      overflow: hidden;
-      max-height: 0;
-      transition: max-height 0.3s ease, padding 0.2s ease;
-    }
-
-    .hint-tuning-card__content[data-expanded="true"] {
-      padding: 20px;
-    }
-
-    .hint-tuning-card__description {
-      margin-top: 0;
-      margin-bottom: 18px;
-      color: var(--color-subtle-text);
-    }
-
-    .tuning-grid {
-      display: grid;
-      gap: 18px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
-
-    .tuning-field {
-      display: grid;
-      gap: 8px;
-    }
-
-    .tuning-field label {
-      font-weight: 600;
-    }
-
-    .tuning-field input[type="number"] {
-      border-radius: 10px;
-      border: 1px solid var(--color-border-soft);
-      padding: 10px 14px;
-      font-size: 1rem;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-      background-color: var(--color-surface-subtle);
-      color: var(--color-body-text);
-    }
-
-    .tuning-field input[type="number"]:focus {
-      outline: none;
-      border-color: var(--color-accent);
-      box-shadow: 0 0 0 3px var(--color-focus-outline);
-    }
-
-    .tuning-note {
-      margin: 0;
-      font-size: 0.85rem;
-      color: var(--color-muted-text);
-      line-height: 1.4;
-    }
-
-    .tuning-checkbox {
-      display: flex;
-      align-items: flex-start;
+    /* ── Upload ─────────────────────────────────────────────────────────── */
+    .upload-label {
+      display: inline-flex;
+      align-items: center;
       gap: 10px;
-      margin-top: 12px;
+      border: 1px solid var(--color-border-soft);
+      background: var(--color-surface-subtle);
+      padding: 10px 20px;
+      border-radius: 12px;
+      cursor: pointer;
       font-weight: 600;
-      color: var(--color-body-text);
+      color: var(--color-subtle-text);
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+      box-shadow: var(--shadow-card);
     }
 
-    .tuning-checkbox input[type="checkbox"] {
-      margin-top: 4px;
-      accent-color: var(--color-accent);
-      width: 18px;
-      height: 18px;
+    .upload-label:hover {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      background: var(--color-sample-button-hover-bg);
     }
 
-    @keyframes fade-in {
-      from {
-        opacity: 0;
-        transform: translateY(4px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    .upload-label input[type="file"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
     }
 
-    section + section {
-      margin-top: 32px;
+    /* ── Status bar ─────────────────────────────────────────────────────── */
+    .status {
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: var(--color-surface-subtle);
+      border: 1px solid var(--color-border-soft);
+      color: var(--color-subtle-text);
+      font-size: 0.9rem;
+      transition: border-color 0.2s, color 0.2s;
     }
 
-    #preview {
-      margin-top: 20px;
+    .status--processing {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
     }
 
-    .stl-grid {
+    .status--success {
+      border-color: #22c55e;
+      color: #15803d;
+    }
+
+    [data-theme="dark"] .status--success {
+      color: #4ade80;
+    }
+
+    .status--error {
+      border-color: #f87171;
+      color: #dc2626;
+    }
+
+    [data-theme="dark"] .status--error {
+      color: #f87171;
+    }
+
+    /* ── Canvas ─────────────────────────────────────────────────────────── */
+    .canvas-wrapper {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--color-border-soft);
+      background: var(--color-surface-subtle);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 80px;
+      transition: border-color 0.3s;
+    }
+
+    #output-canvas {
+      display: none;
+      max-width: 100%;
+      max-height: 500px;
+      width: auto;
+      height: auto;
+    }
+
+    /* ── Results ────────────────────────────────────────────────────────── */
+    .result-row {
       display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      align-items: start;
-    }
-
-    .stl-form {
-      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 14px;
     }
 
-    .stl-form label {
-      display: grid;
-      gap: 6px;
-      font-weight: 600;
-    }
-
-    .stl-form input[type="number"] {
-      border-radius: 10px;
-      border: 1px solid var(--color-border-soft);
-      padding: 10px 14px;
-      font-size: 1rem;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-      background-color: var(--color-surface-subtle);
-      color: var(--color-body-text);
-    }
-
-    .stl-form input[type="number"]:focus {
-      outline: none;
-      border-color: var(--color-accent);
-      box-shadow: 0 0 0 3px var(--color-focus-outline);
-    }
-
-    .stl-actions {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-
-    .stl-button {
-      border: none;
+    .result-card {
+      padding: 16px 18px;
       border-radius: 12px;
-      padding: 10px 18px;
-      font-weight: 600;
-      cursor: pointer;
-      background: var(--color-accent);
-      color: var(--color-accent-contrast);
-      box-shadow: var(--shadow-button-primary);
-      transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-    }
-
-    .stl-button:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-button-primary-hover);
-      background: var(--color-accent-hover);
-    }
-
-    .stl-button.secondary {
-      background: var(--color-secondary-bg);
-      color: var(--color-secondary-text);
-      box-shadow: none;
-    }
-
-    .stl-summary {
-      margin: 0;
-      font-size: 0.95rem;
-      color: var(--color-subtle-text);
-    }
-
-    .stl-viewer {
-      width: 100%;
-      height: clamp(260px, 40vh, 400px);
-      background: radial-gradient(circle at 30% 30%, var(--color-viewer-bg-start), var(--color-viewer-bg-end));
-      border-radius: 16px;
-      position: relative;
-      overflow: hidden;
-      border: 1px solid var(--color-border-strong);
-      transition: background 0.3s ease, border-color 0.3s ease;
-    }
-
-    .stl-viewer__canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-      cursor: grab;
-      touch-action: none;
-    }
-
-    .stl-viewer__canvas:active {
-      cursor: grabbing;
-    }
-
-    .stl-tip {
-      margin-top: 12px;
-      color: var(--color-muted-text);
-      font-size: 0.9rem;
-    }
-
-    .tests-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .tests-controls {
-      display: flex;
-      justify-content: flex-end;
-    }
-
-    .tests-run-button {
-      border: none;
-      background: var(--color-accent);
-      color: var(--color-accent-contrast);
-      padding: 10px 20px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-      box-shadow: var(--shadow-button-primary);
-    }
-
-    .tests-run-button:hover,
-    .tests-run-button:focus-visible {
-      background: var(--color-accent-hover);
-      transform: translateY(-1px);
-      outline: none;
-      box-shadow: var(--shadow-button-primary-hover);
-    }
-
-    .tests-run-button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .tests-table-wrapper {
-      border-radius: 16px;
-      background: var(--color-surface);
-      box-shadow: var(--shadow-card);
-      overflow-x: auto;
-    }
-
-    .tests-table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 640px;
-    }
-
-    .tests-table th,
-    .tests-table td {
-      text-align: left;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--color-border-soft);
-      font-size: 0.9rem;
-    }
-
-    .tests-table th {
       background: var(--color-surface-subtle);
-      color: var(--color-subtle-text);
-      font-weight: 600;
+      border: 1px solid var(--color-border-soft);
+      animation: fade-in 200ms ease;
     }
 
-    .tests-status {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-weight: 700;
+    .result-card h3 {
+      margin: 0 0 6px;
+      font-size: 0.8rem;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid transparent;
-    }
-
-    .tests-status--pass {
-      color: #16a34a;
-      background: rgba(22, 163, 74, 0.12);
-      border-color: rgba(22, 163, 74, 0.32);
-    }
-
-    .tests-status--fail {
-      color: #dc2626;
-      background: rgba(220, 38, 38, 0.12);
-      border-color: rgba(220, 38, 38, 0.32);
-    }
-
-    .tests-details {
-      padding: 12px 16px;
-      background: var(--color-surface-subtle);
-      border-radius: 12px;
-      border: 1px solid var(--color-border-soft);
-    }
-
-    .tests-details summary {
-      cursor: pointer;
+      letter-spacing: 0.07em;
+      color: var(--color-muted-text);
       font-weight: 600;
-      color: var(--color-subtle-text);
     }
 
-    .tests-details__meta {
-      display: grid;
-      gap: 4px;
-      margin-top: 10px;
+    .result-card p {
+      margin: 0;
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+
+    .result-unit {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--color-muted-text);
+    }
+
+    .result-note {
+      margin: 0;
       font-size: 0.85rem;
       color: var(--color-muted-text);
+      line-height: 1.5;
     }
 
-    .tests-details__list {
-      list-style: none;
-      padding: 0;
-      margin: 12px 0 0;
-      display: grid;
-      gap: 12px;
-    }
-
-    .tests-details__title {
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .tests-details__message {
-      color: var(--color-muted-text);
-      font-size: 0.85rem;
-    }
-
-    .tests-details__metrics {
-      margin: 8px 0 0;
-      padding: 8px 12px;
-      background: var(--color-surface);
-      border-radius: 8px;
-      font-size: 0.75rem;
-      color: var(--color-subtle-text);
-      border: 1px solid var(--color-border-soft);
-    }
-
-    .tests-table__empty {
-      color: var(--color-muted-text);
-      text-align: center;
-      padding: 24px;
-    }
-
-    .tests-table__empty--error {
-      color: #dc2626;
-    }
-
-    .tests-cards {
-      display: none;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .tests-card {
-      background: var(--color-surface);
-      border-radius: 16px;
-      box-shadow: var(--shadow-card);
-      padding: 16px;
-      border: 1px solid var(--color-border-soft);
+    /* ── Overlay legend ─────────────────────────────────────────────────── */
+    .legend {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+      color: var(--color-subtle-text);
     }
 
-    .tests-card__header {
+    .legend-item {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
+      gap: 7px;
     }
 
-    .tests-card__title {
-      margin: 0;
-      font-size: 1.05rem;
-      word-break: break-word;
+    .legend-swatch {
+      width: 28px;
+      height: 4px;
+      border-radius: 2px;
+      flex-shrink: 0;
     }
 
-    .tests-card__overall {
-      font-size: 0.78rem;
+    /* ── Animations ─────────────────────────────────────────────────────── */
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
-    .tests-card__list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 10px;
-    }
-
-    .tests-card__row {
-      display: grid;
-      gap: 6px;
-    }
-
-    .tests-card__stage {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      font-weight: 600;
-      color: var(--color-subtle-text);
-    }
-
-    .tests-card__details {
-      background: var(--color-surface-subtle);
-      border-radius: 12px;
-      border: 1px solid var(--color-border-soft);
-      padding: 10px 12px;
-    }
-
-    .tests-card__details summary {
-      cursor: pointer;
-      font-weight: 600;
-      color: var(--color-subtle-text);
-    }
-
-    .tests-card__details-body {
-      margin-top: 8px;
-      font-size: 0.85rem;
-      color: var(--color-muted-text);
-      display: grid;
-      gap: 6px;
-    }
-
-    .tests-card__empty {
-      text-align: center;
-      color: var(--color-muted-text);
-    }
-
-    .tests-table td.tests-sample {
-      max-width: 220px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .tests-sandbox {
-      position: absolute;
-      left: -9999px;
-      top: -9999px;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-    }
-
+    /* ── Responsive ─────────────────────────────────────────────────────── */
     @media (max-width: 640px) {
-      body {
-        padding: 16px;
-      }
-
-      main.app {
-        padding: 24px 18px;
-      }
-
-      .app-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-      }
-
-      .app-title {
-        text-align: center;
-      }
-
-      .theme-toggle {
-        align-self: center;
-      }
-
-      .stl-actions {
-        flex-direction: column;
-      }
-
-      .stl-button {
-        width: 100%;
-        text-align: center;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .tests-panel {
-        gap: 12px;
-        padding-bottom: calc(96px + env(safe-area-inset-bottom));
-      }
-
-      .tests-panel h2 {
-        margin: 0 0 6px;
-        font-size: 1.4rem;
-      }
-
-      .tests-controls {
-        position: sticky;
-        bottom: 0;
-        z-index: 10;
-        padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
-        background: var(--color-surface);
-      }
-
-      .tests-run-button {
-        width: 100%;
-        padding: 14px 20px;
-        min-height: 44px;
-        font-size: 1rem;
-      }
-
-      .tests-table-wrapper {
-        display: none;
-      }
-
-      .tests-cards {
-        display: flex;
-      }
-
-      .tests-status {
-        font-size: 0.85rem;
-        padding: 6px 12px;
-      }
+      body { padding: 16px; }
+      main.app { padding: 24px 18px; gap: 20px; }
+      .app-header { flex-direction: column; align-items: stretch; gap: 10px; }
+      .app-title { text-align: center; }
+      .theme-toggle { align-self: center; }
     }
   </style>
 </head>
 <body>
   <main class="app">
+
+    <!-- Header -->
     <header class="app-header">
-      <h1 class="app-title">Gridfinium</h1>
-      <button type="button" class="theme-toggle" id="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode">
+      <div>
+        <h1 class="app-title">Gridfinium</h1>
+        <p class="app-subtitle">
+          Photograph an object on a sheet of letter paper — Gridfinium detects
+          the paper and object outline automatically.
+        </p>
+      </div>
+      <button type="button" class="theme-toggle" id="theme-toggle"
+              aria-pressed="false" aria-label="Switch to dark mode">
         <span class="theme-toggle__label theme-toggle__label--light">Light</span>
         <span class="theme-toggle__thumb" aria-hidden="true"></span>
         <span class="theme-toggle__label theme-toggle__label--dark">Dark</span>
       </button>
     </header>
-    <nav class="tab-bar" aria-label="Primary">
-      <button type="button" class="tab-button is-active" data-tab-target="image-tools">Image Tools</button>
-      <button type="button" class="tab-button" data-tab-target="stl-tools">STL Designer</button>
-      <button type="button" class="tab-button" data-tab-target="tests">Tests</button>
-    </nav>
 
-    <section id="image-tools" class="tab-panel is-active" aria-label="Image Tools">
-      <section class="test-image-picker" aria-labelledby="test-image-heading">
-        <div class="test-image-picker__intro">
-          <h2 id="test-image-heading" class="test-image-picker__heading">Sample</h2>
-          <p class="test-image-picker__description">Switch between the built-in test photos to see how the workflow responds. Uploading your own image will replace these samples.</p>
-        </div>
-        <div class="test-image-picker__buttons" id="test-image-picker" role="group" aria-label="Sample photos">
-          <button class="test-image-button" data-test-image-id="test-image-mouse">Mouse on paper</button>
-          <button class="test-image-button" data-test-image-id="test-image-remote">Remote on paper</button>
-          <button class="test-image-button" data-test-image-id="test-image-coaster">Coaster top on paper</button>
-        </div>
-      </section>
-
-      <h2>1. Upload File</h2>
-      <p>Upload a photo to detect and outline documents automatically.</p>
-      <input type="file" accept=".jpg,.jpeg,.png" id="file-upload" name="file-upload">
-      <div id="preview"></div>
-
-      <section class="hint-tuning-card" id="hint-tuning-card" aria-labelledby="tuning-heading">
-        <div class="hint-tuning-card__header">
-          <h2 id="tuning-heading" class="hint-tuning-card__title">Hint Tuning Parameters</h2>
-          <button type="button" class="hint-tuning-card__toggle" id="hint-tuning-toggle" aria-controls="hint-tuning-content" aria-expanded="false">
-            Show details
-          </button>
-        </div>
-        <div id="hint-tuning-content" class="hint-tuning-card__content" data-expanded="false" role="group" aria-describedby="tuning-heading">
-          <p class="hint-tuning-card__description">Use these sliders to guide hint-based selections toward the object you care about.</p>
-          <div class="tuning-grid">
-          <div class="tuning-field">
-            <label for="hint-threshold-low">Canny low threshold</label>
-            <input type="number" id="hint-threshold-low" name="hint-threshold-low" min="0" max="255" step="1" value="10">
-            <p class="tuning-note">Lower values pick up faint edges. Raise this if tiny textures cause noisy selections.</p>
-          </div>
-          <div class="tuning-field">
-            <label for="hint-threshold-high">Canny high threshold</label>
-            <input type="number" id="hint-threshold-high" name="hint-threshold-high" min="0" max="255" step="1" value="50">
-            <p class="tuning-note">Higher numbers keep only strong borders. Drop it to help latch onto small items like the coaster.</p>
-          </div>
-          <div class="tuning-field">
-            <label for="hint-kernel-size">Morphology kernel size</label>
-            <input type="number" id="hint-kernel-size" name="hint-kernel-size" min="1" max="31" step="1" value="5">
-            <p class="tuning-note">Controls how aggressively edges are merged. Keep it small to separate nearby shapes.</p>
-          </div>
-          <div class="tuning-field">
-            <label for="hint-min-area">Minimum contour area (%)</label>
-            <input type="number" id="hint-min-area" name="hint-min-area" min="0" max="5" step="0.001" value="0.001">
-            <p class="tuning-note">Ignores shapes below this percentage of the full image. Reduce it to keep petite selections.</p>
-          </div>
-          <div class="tuning-field">
-            <label for="hint-fusion-mode">Edge/threshold fusion</label>
-            <select id="hint-fusion-mode" name="hint-fusion-mode">
-              <option value="edge">Edge only</option>
-              <option value="threshold">Threshold only</option>
-              <option value="and" selected>Edge AND Threshold</option>
-              <option value="or">Edge OR Threshold</option>
-            </select>
-            <p class="tuning-note">Choose how edge and threshold maps combine when building hint contours.</p>
-          </div>
-          <div class="tuning-field">
-            <label for="hint-paper-tolerance">Paper similarity tolerance (%)</label>
-            <input type="number" id="hint-paper-tolerance" name="hint-paper-tolerance" min="0" max="100" step="0.01" value="10">
-            <p class="tuning-note">Reject hint contours whose size is within this percent of the paper outline. Raise it if the paper keeps winning.</p>
-          </div>
-        </div>
-        <label class="tuning-checkbox" for="hint-show-steps">
-          <input type="checkbox" id="hint-show-steps" name="hint-show-steps" checked>
-          <span>Display paper processing steps while outlining</span>
-        </label>
-        <label class="tuning-checkbox" for="hint-enable-erode">
-          <input type="checkbox" id="hint-enable-erode" name="hint-enable-erode" checked>
-          <span>Apply <code>cv.erode()</code> refinement after dilation</span>
-        </label>
-        </div>
-      </section>
-    </section>
-
-    <section id="stl-tools" class="tab-panel" aria-label="STL Designer">
-      <h2>Create &amp; Preview STL Files</h2>
-      <p>Adjust the dimensions of your model in inches, preview it in 3D, and export a ready-to-print STL file.</p>
-      <div class="stl-grid">
-        <form class="stl-form" aria-describedby="stl-summary">
-          <label>
-            Width (X)
-            <input type="number" id="stl-width" name="stl-width" min="0.1" step="0.1" value="4">
-          </label>
-          <label>
-            Depth (Y)
-            <input type="number" id="stl-depth" name="stl-depth" min="0.1" step="0.1" value="6">
-          </label>
-          <label>
-            Height (Z)
-            <input type="number" id="stl-height" name="stl-height" min="0.1" step="0.1" value="3">
-          </label>
-          <p id="stl-summary" class="stl-summary" role="status">Cube dimensions: 4&quot; × 6&quot; × 3&quot;.</p>
-          <div class="stl-actions">
-            <button type="button" class="stl-button" id="stl-download">Download STL</button>
-            <button type="button" class="stl-button secondary" id="stl-reset">Reset to 4&quot; × 6&quot; × 3&quot;</button>
-          </div>
-        </form>
-        <div class="stl-viewer" id="stl-viewer" aria-label="3D preview" role="img"></div>
-      </div>
-      <p class="stl-tip">Tip: drag to rotate the model and use your scroll wheel or trackpad to zoom.</p>
-    </section>
-
-    <section id="tests" class="tab-panel" aria-label="Tests">
-      <div class="tests-panel">
-        <div>
-          <h2>In-app Tests</h2>
-          <p>Run smoke and schema checks against the current UI, detection pipeline, and STL export.</p>
-        </div>
-        <div class="tests-controls">
-          <button type="button" class="tests-run-button" id="tests-run-all">Run All</button>
-        </div>
-        <div class="tests-table-wrapper">
-          <table class="tests-table">
-            <thead>
-              <tr>
-                <th>Sample</th>
-                <th>Load</th>
-                <th>Paper Detect</th>
-                <th>Overlay Init</th>
-                <th>STL Export Smoke</th>
-                <th>Overall</th>
-              </tr>
-            </thead>
-            <tbody id="tests-results-body"></tbody>
-          </table>
-        </div>
-        <div class="tests-cards" id="tests-results-cards" aria-live="polite"></div>
-        <div id="tests-sandbox" class="tests-sandbox" aria-hidden="true"></div>
+    <!-- Sample image picker -->
+    <section class="sample-picker" aria-labelledby="sample-heading">
+      <p class="sample-picker__heading" id="sample-heading">Sample images</p>
+      <p class="sample-picker__description">
+        Choose a built-in photo or upload your own object placed flat on a
+        letter-size sheet.
+      </p>
+      <div class="sample-buttons" role="group" aria-label="Sample photos">
+        <button class="sample-btn" type="button"
+                data-image-src="frontend/test-images/mouse.png.jpeg"
+                data-image-id="mouse">
+          Mouse
+        </button>
+        <button class="sample-btn" type="button"
+                data-image-src="frontend/test-images/remote.png.jpeg"
+                data-image-id="remote">
+          Remote
+        </button>
+        <button class="sample-btn" type="button"
+                data-image-src="frontend/test-images/coaster-top.png.jpeg"
+                data-image-id="coaster">
+          Coaster
+        </button>
       </div>
     </section>
+
+    <!-- Upload -->
+    <div>
+      <label class="upload-label" for="file-upload">
+        <!-- Upload icon -->
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Upload your own image
+        <input type="file" id="file-upload" accept=".jpg,.jpeg,.png">
+      </label>
+    </div>
+
+    <!-- Status -->
+    <div id="status" class="status" role="status" aria-live="polite">
+      Loading OpenCV…
+    </div>
+
+    <!-- Canvas with overlays -->
+    <div class="canvas-wrapper">
+      <canvas id="output-canvas"
+              aria-label="Photo with paper outline (blue) and object contour (red)">
+      </canvas>
+    </div>
+
+    <!-- Legend (shown alongside canvas) -->
+    <div class="legend" aria-hidden="true">
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:#3b82f6;"></span>
+        Paper outline
+      </span>
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:#ef4444;"></span>
+        Object contour
+      </span>
+    </div>
+
+    <!-- Detection results -->
+    <div id="results" aria-live="polite"></div>
+
   </main>
 </body>
 </html>
