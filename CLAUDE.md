@@ -71,7 +71,7 @@ Vercel is connected via the GitHub App and deploys automatically:
 - **Production**: on every push/merge to `main`
 - **Preview**: on every pull request (Vercel posts a preview URL as a PR check)
 
-To publish a change: merge to `main`. No build command or output directory needs configuring — Vercel serves the repo root as static files.
+**Workflow: push directly to `main`.** No PRs needed — the owner prefers fast iteration. After pushing to `main`, Vercel deploys to production automatically within ~30 seconds. No build command or output directory needs configuring — Vercel serves the repo root as static files.
 
 ## Code conventions
 
